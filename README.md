@@ -1,0 +1,1 @@
+Note for Linux users of the final app: because this ffplay is dynamically linked (not a static build), it will work on Ubuntu/Debian-based systems. Users on Arch, Fedora, or other distros who find music doesn't play just need to run sudo apt install ffmpeg / sudo pacman -S ffmpeg / sudo dnf install ffmpeg once. Everything else in the app runs fine without it.
