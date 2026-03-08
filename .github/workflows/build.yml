@@ -1,18 +1,19 @@
 name: Build and Release Neuron 8
 
-# ── Triggers ──────────────────────────────────────────────────────────────────
-# Runs when you push a tag starting with "v" (e.g. v1.0.0, v1.2.3)
+# Fires when you push a tag like v1.0.0
 on:
   push:
     tags:
       - 'v*'
 
-# ── Jobs ──────────────────────────────────────────────────────────────────────
 jobs:
 
-  # ── macOS build ─────────────────────────────────────────────────────────────
+  # ── macOS ────────────────────────────────────────────────────────────────────
   build-macos:
     runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: "NeuroSuite_V8/Neuron8 Base"
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -22,31 +23,44 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install tkinter
+        run: brew install python-tk@3.12 || true
+
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install numpy Pillow matplotlib pyinstaller
 
-      - name: Install tkinter (macOS)
+      - name: Generate .icns icon from PNG
         run: |
-          # tkinter comes with the python.org build used by setup-python,
-          # but brew Python sometimes needs this:
-          brew install python-tk@3.12 || true
+          python3 - << 'PYEOF'
+          import struct, io
+          from PIL import Image
+          img = Image.open('assets/neuron8.png').convert('RGBA')
+          icns_types = {16:b'icp4',32:b'icp5',64:b'icp6',128:b'ic07',256:b'ic08',512:b'ic09',1024:b'ic10'}
+          chunks = []
+          for size, ostype in icns_types.items():
+              buf = io.BytesIO()
+              img.resize((size,size), Image.LANCZOS).save(buf, format='PNG')
+              data = buf.getvalue()
+              chunks.append(ostype + struct.pack('>I', 8+len(data)) + data)
+          body = b''.join(chunks)
+          with open('assets/neuron8.icns','wb') as f:
+              f.write(b'icns' + struct.pack('>I', 8+len(body)) + body)
+          print("OK assets/neuron8.icns")
+          PYEOF
 
       - name: Download ffplay for macOS
         run: |
           mkdir -p ffplay_bin/macos
-          # Download static ffplay build from evermeet.cx
           curl -fsSL "https://evermeet.cx/ffmpeg/getrelease/ffplay/zip" \
                -o /tmp/ffplay_mac.zip
           unzip -o /tmp/ffplay_mac.zip -d ffplay_bin/macos/
           chmod +x ffplay_bin/macos/ffplay
-          # Verify it works
           ffplay_bin/macos/ffplay -version 2>&1 | head -1
 
       - name: Build with PyInstaller
-        run: |
-          python -m PyInstaller neuron8.spec --noconfirm
+        run: python -m PyInstaller neuron8.spec --noconfirm
 
       - name: Create DMG
         run: |
@@ -56,16 +70,19 @@ jobs:
             -ov -format UDZO \
             dist/Neuron8_macOS.dmg
 
-      - name: Upload DMG artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Neuron8-macOS
-          path: dist/Neuron8_macOS.dmg
+          path: "NeuroSuite_V8/Neuron8 Base/dist/Neuron8_macOS.dmg"
           retention-days: 7
 
-  # ── Linux build ─────────────────────────────────────────────────────────────
+  # ── Linux ────────────────────────────────────────────────────────────────────
   build-linux:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "NeuroSuite_V8/Neuron8 Base"
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -78,40 +95,49 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y python3-tk xvfb
+          sudo apt-get install -y python3-tk xvfb ffmpeg
 
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install numpy Pillow matplotlib pyinstaller
 
-      - name: Get ffplay for Linux
+      - name: Generate .ico icon from PNG
         run: |
-          sudo apt-get install -y ffmpeg
+          python3 - << 'PYEOF'
+          from PIL import Image
+          img = Image.open('assets/neuron8.png').convert('RGBA')
+          img.save('assets/neuron8.ico', format='ICO',
+                   sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
+          print("OK assets/neuron8.ico")
+          PYEOF
+
+      - name: Get ffplay binary
+        run: |
           mkdir -p ffplay_bin/linux
           cp $(which ffplay) ffplay_bin/linux/ffplay
           chmod +x ffplay_bin/linux/ffplay
           ffplay_bin/linux/ffplay -version 2>&1 | head -1
 
       - name: Build with PyInstaller
-        run: |
-          python -m PyInstaller neuron8.spec --noconfirm
+        run: python -m PyInstaller neuron8.spec --noconfirm
 
-      - name: Create tar.gz archive
-        run: |
-          cd dist
-          tar -czf Neuron8_linux.tar.gz Neuron8/
+      - name: Create tar.gz
+        run: cd dist && tar -czf Neuron8_linux.tar.gz Neuron8/
 
-      - name: Upload Linux artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Neuron8-Linux
-          path: dist/Neuron8_linux.tar.gz
+          path: "NeuroSuite_V8/Neuron8 Base/dist/Neuron8_linux.tar.gz"
           retention-days: 7
 
-  # ── Windows build ────────────────────────────────────────────────────────────
+  # ── Windows ──────────────────────────────────────────────────────────────────
   build-windows:
     runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: "NeuroSuite_V8/Neuron8 Base"
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -126,54 +152,55 @@ jobs:
           python -m pip install --upgrade pip
           pip install numpy Pillow matplotlib pyinstaller
 
+      - name: Generate .ico icon from PNG
+        shell: pwsh
+        run: |
+          python -c "
+          from PIL import Image
+          img = Image.open('assets/neuron8.png').convert('RGBA')
+          img.save('assets/neuron8.ico', format='ICO', sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
+          print('OK assets/neuron8.ico')
+          "
+
       - name: Download ffplay for Windows
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "ffplay_bin\windows"
-          # Download the gyan.dev "release essentials" build
           $url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-          Write-Host "Downloading FFmpeg from $url"
+          Write-Host "Downloading: $url"
           Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\ffmpeg_win.zip"
-          # Extract and locate ffplay.exe
           Expand-Archive -Path "$env:TEMP\ffmpeg_win.zip" -DestinationPath "$env:TEMP\ffmpeg_win" -Force
           $ffplay = Get-ChildItem -Path "$env:TEMP\ffmpeg_win" -Recurse -Filter "ffplay.exe" | Select-Object -First 1
           Copy-Item $ffplay.FullName -Destination "ffplay_bin\windows\ffplay.exe"
-          # Verify
           & "ffplay_bin\windows\ffplay.exe" -version 2>&1 | Select-Object -First 1
 
       - name: Build with PyInstaller
-        run: |
-          python -m PyInstaller neuron8.spec --noconfirm
+        run: python -m PyInstaller neuron8.spec --noconfirm
 
-      - name: Create ZIP archive
+      - name: Create ZIP
         shell: pwsh
-        run: |
-          Compress-Archive -Path "dist\Neuron8" -DestinationPath "dist\Neuron8_windows.zip" -Force
+        run: Compress-Archive -Path "dist\Neuron8" -DestinationPath "dist\Neuron8_windows.zip" -Force
 
-      - name: Upload Windows artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Neuron8-Windows
-          path: dist\Neuron8_windows.zip
+          path: "NeuroSuite_V8/Neuron8 Base/dist/Neuron8_windows.zip"
           retention-days: 7
 
-  # ── Create GitHub Release with all three artifacts ───────────────────────────
+  # ── Create GitHub Release ─────────────────────────────────────────────────────
   release:
     needs: [build-macos, build-linux, build-windows]
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # needed to create releases and upload assets
-
+      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts/
 
-      - name: List downloaded files
-        run: find artifacts/ -type f
-
-      - name: Create GitHub Release and upload assets
+      - name: Create release and upload files
         uses: softprops/action-gh-release@v2
         with:
           name: "Neuron 8 ${{ github.ref_name }}"
@@ -187,11 +214,9 @@ jobs:
             | 🐧 Linux | `Neuron8_linux.tar.gz` | Extract and run `./Neuron8/Neuron8` |
             | 🪟 Windows | `Neuron8_windows.zip` | Extract and double-click `Neuron8.exe` |
 
-            > **macOS note:** If macOS says the app is damaged, right-click → Open, or run:
-            > `xattr -cr /Applications/Neuron8.app`
-
-            > **Windows note:** Windows Defender may show a SmartScreen warning.
-            > Click "More info" → "Run anyway".
+            > **macOS:** If Gatekeeper blocks the app, right-click → Open, or run `xattr -cr Neuron8.app`
+            >
+            > **Windows:** If SmartScreen appears, click "More info" → "Run anyway"
           files: |
             artifacts/Neuron8-macOS/Neuron8_macOS.dmg
             artifacts/Neuron8-Linux/Neuron8_linux.tar.gz

@@ -72,6 +72,14 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# ── Icon path — platform picks the right format ──────────────────────────────
+if sys.platform == 'win32':
+    _icon = os.path.join(HERE, 'assets', 'neuron8.ico')
+elif sys.platform == 'darwin':
+    _icon = os.path.join(HERE, 'assets', 'neuron8.icns')
+else:
+    _icon = os.path.join(HERE, 'assets', 'neuron8.png')
+
 # ── Executable ───────────────────────────────────────────────────────────────
 exe = EXE(
     pyz,
@@ -83,13 +91,13 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,           # no terminal window on Windows / macOS
+    console=False,
     disable_windowed_traceback=False,
-    argv_emulation=False,    # set True for macOS if using sys.argv tricks
+    argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # icon='assets/neuron8.ico',   # uncomment and supply a .ico / .icns file
+    icon=_icon,
 )
 
 # ── One-dir bundle ───────────────────────────────────────────────────────────
@@ -109,7 +117,7 @@ if sys.platform == 'darwin':
     app = BUNDLE(
         coll,
         name='Neuron8.app',
-        # icon='assets/neuron8.icns',
+        icon=_icon,
         bundle_identifier='com.volvi.neuron8',
         info_plist={
             'NSHighResolutionCapable': True,
