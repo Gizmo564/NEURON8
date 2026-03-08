@@ -11,9 +11,6 @@ jobs:
   # ── macOS ────────────────────────────────────────────────────────────────────
   build-macos:
     runs-on: macos-latest
-    defaults:
-      run:
-        working-directory: "NeuroSuite_V8/Neuron8 Base"
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -74,15 +71,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Neuron8-macOS
-          path: "NeuroSuite_V8/Neuron8 Base/dist/Neuron8_macOS.dmg"
+          path: dist/Neuron8_macOS.dmg
           retention-days: 7
 
   # ── Linux ────────────────────────────────────────────────────────────────────
   build-linux:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: "NeuroSuite_V8/Neuron8 Base"
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -129,15 +123,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Neuron8-Linux
-          path: "NeuroSuite_V8/Neuron8 Base/dist/Neuron8_linux.tar.gz"
+          path: dist/Neuron8_linux.tar.gz
           retention-days: 7
 
   # ── Windows ──────────────────────────────────────────────────────────────────
   build-windows:
     runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: "NeuroSuite_V8/Neuron8 Base"
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -185,7 +176,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Neuron8-Windows
-          path: "NeuroSuite_V8/Neuron8 Base/dist/Neuron8_windows.zip"
+          path: dist\Neuron8_windows.zip
           retention-days: 7
 
   # ── Create GitHub Release ─────────────────────────────────────────────────────
@@ -217,6 +208,7 @@ jobs:
             > **macOS:** If Gatekeeper blocks the app, right-click → Open, or run `xattr -cr Neuron8.app`
             >
             > **Windows:** If SmartScreen appears, click "More info" → "Run anyway"
+            > **Linux:** Because this ffplay is dynamically linked (not a static build), it will work on Ubuntu/Debian-based systems. Users on Arch, Fedora, or other distros who find music doesn't play just need to run sudo apt install ffmpeg / sudo pacman -S ffmpeg / sudo dnf install ffmpeg once. Everything else in the app runs fine without it.
           files: |
             artifacts/Neuron8-macOS/Neuron8_macOS.dmg
             artifacts/Neuron8-Linux/Neuron8_linux.tar.gz
