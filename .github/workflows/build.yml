@@ -85,27 +85,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install numpy Pillow matplotlib pyinstaller
 
-      - name: Download static ffplay for Linux
+      - name: Get ffplay for Linux
         run: |
+          sudo apt-get install -y ffmpeg
           mkdir -p ffplay_bin/linux
-          ARCH=$(uname -m)
-          case "$ARCH" in
-            x86_64)  JVS_ARCH="amd64" ;;
-            aarch64) JVS_ARCH="arm64" ;;
-            *)        JVS_ARCH="amd64" ;;
-          esac
-          URL="https://johnvansickle.com/ffmpeg/builds/ffmpeg-git-${JVS_ARCH}-static.tar.xz"
-          echo "Downloading: $URL"
-          curl -fsSL "$URL" -o /tmp/ffmpeg_static.tar.xz
-          mkdir -p /tmp/ffmpeg_extracted
-          tar -xJf /tmp/ffmpeg_static.tar.xz -C /tmp/ffmpeg_extracted
-          echo "--- Extracted contents: ---"
-          ls /tmp/ffmpeg_extracted/
-          echo "--- Searching for ffplay: ---"
-          find /tmp/ffmpeg_extracted -name "ffplay" -type f
-          FFPLAY_BIN=$(find /tmp/ffmpeg_extracted -name "ffplay" -type f | head -1)
-          echo "Found ffplay at: $FFPLAY_BIN"
-          cp "$FFPLAY_BIN" ffplay_bin/linux/ffplay
+          cp $(which ffplay) ffplay_bin/linux/ffplay
           chmod +x ffplay_bin/linux/ffplay
           ffplay_bin/linux/ffplay -version 2>&1 | head -1
 
