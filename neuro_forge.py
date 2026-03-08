@@ -24,6 +24,11 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, simpledialog
 import threading, datetime, random, math, json, re, csv, io, difflib
 
+# ── Program-accent button: all buttons use YEL (NeuroForge yellow) ────────────
+_Btn_core = Btn
+def Btn(parent, text, cmd=None, color=None, fg=None, **kw):
+    return _Btn_core(parent, text, cmd=cmd, color=YEL, fg=BG, **kw)
+
 # ─────────────────────────────────────────────────────────────────
 #  Training data
 # ─────────────────────────────────────────────────────────────────
@@ -628,10 +633,9 @@ class NeuroForgeApp(tk.Tk):
                  bg=BG2, fg=FG2, font=("Courier",6,"italic"), anchor='w').pack(fill='x', padx=6)
         slider_row(sf, "Experience", self._c_exp_var,  0.0, 3.0, GRN)
 
-        tk.Button(parent, text="↺  Reset to CUSTOM defaults",
-                  command=self._reset_custom_defaults,
-                  bg=BG3, fg=PRP, font=("Courier",8), relief='flat',
-                  padx=6, pady=3).pack(anchor='w', padx=8, pady=(4,8))
+        Btn(parent, "↺  Reset to CUSTOM defaults",
+            cmd=self._reset_custom_defaults,
+            font=("Courier",8), pady=3).pack(anchor='w', padx=8, pady=(4,8))
 
     # ── Architecture tab ──────────────────────────────────────────────────
     def _build_arch_tab(self, parent):
@@ -750,10 +754,10 @@ class NeuroForgeApp(tk.Tk):
                      insertbackground=FG, relief='flat', font=("Courier",10)).pack(fill='x', padx=10, pady=(0,4))
 
         btn_row = tk.Frame(parent, bg=BG); btn_row.pack(fill='x', padx=10, pady=(0,4))
-        tk.Button(btn_row, text="  + Add Pair  ", command=self._add_qa_pair,
-                  bg=ACN, fg=BG, font=("Courier",10,"bold"), relief='flat', padx=8).pack(side='left')
-        tk.Button(btn_row, text="  📂 Import CSV…  ", command=self._import_csv_qa,
-                  bg=BG3, fg=YEL, font=("Courier",10,"bold"), relief='flat', padx=8).pack(side='left', padx=(8,0))
+        Btn(btn_row, "  + Add Pair  ", cmd=self._add_qa_pair,
+            font=("Courier",10,"bold")).pack(side='left')
+        Btn(btn_row, "  📂 Import CSV…  ", cmd=self._import_csv_qa,
+            font=("Courier",10,"bold")).pack(side='left', padx=(8,0))
         self._qa_count_var = tk.StringVar(value="0 pairs")
         tk.Label(btn_row, textvariable=self._qa_count_var, bg=BG, fg=FG2,
                  font=("Courier",8)).pack(side='left', padx=10)
@@ -771,10 +775,10 @@ class NeuroForgeApp(tk.Tk):
         qa_vsb.pack(side='right', fill='y'); self._qa_tree.pack(fill='both', expand=True)
 
         cr = tk.Frame(parent, bg=BG); cr.pack(fill='x', padx=10, pady=(4,0))
-        tk.Button(cr, text="✕ Remove Selected", command=self._remove_qa,
-                  bg=BG3, fg=RED, font=("Courier",9), relief='flat', padx=6).pack(side='left')
-        tk.Button(cr, text="✕ Clear All Pairs", command=self._clear_qa_pairs,
-                  bg=BG3, fg=RED, font=("Courier",9), relief='flat', padx=6).pack(side='left', padx=(8,0))
+        Btn(cr, "✕ Remove Selected", cmd=self._remove_qa,
+            font=("Courier",9)).pack(side='left')
+        Btn(cr, "✕ Clear All Pairs", cmd=self._clear_qa_pairs,
+            font=("Courier",9)).pack(side='left', padx=(8,0))
 
         hint = tk.Frame(parent, bg=BG4); hint.pack(fill='x', padx=8, pady=(6,2))
         tk.Label(hint,
@@ -791,10 +795,10 @@ class NeuroForgeApp(tk.Tk):
                       "and merged into the Phase 1 autoencoder vocabulary.",
                  bg=BG, fg=FG2, font=("Courier",8), justify='left').pack(fill='x', padx=10, pady=(0,4))
         vb = tk.Frame(parent, bg=BG); vb.pack(fill='x', padx=10, pady=(0,4))
-        tk.Button(vb, text="  📂 Import .txt Vocab…  ", command=self._import_vocab_txt,
-                  bg=BG3, fg=GRN, font=("Courier",10,"bold"), relief='flat', padx=8).pack(side='left')
-        tk.Button(vb, text="  ✕ Clear Vocab  ", command=self._clear_custom_vocab,
-                  bg=BG3, fg=RED, font=("Courier",9), relief='flat', padx=6).pack(side='left', padx=(8,0))
+        Btn(vb, "  📂 Import .txt Vocab…  ", cmd=self._import_vocab_txt,
+            font=("Courier",10,"bold")).pack(side='left')
+        Btn(vb, "  ✕ Clear Vocab  ", cmd=self._clear_custom_vocab,
+            font=("Courier",9)).pack(side='left', padx=(8,0))
         self._vocab_status_var = tk.StringVar(value="No custom vocabulary loaded.")
         tk.Label(parent, textvariable=self._vocab_status_var, bg=BG, fg=CYN,
                  font=("Courier",8), anchor='w').pack(fill='x', padx=10, pady=(2,0))
@@ -810,8 +814,8 @@ class NeuroForgeApp(tk.Tk):
         hdr = tk.Frame(parent, bg=BG2, pady=4); hdr.pack(fill='x', padx=4)
         tk.Label(hdr, text="  Forge Log", bg=BG2, fg=PRP,
                  font=("Courier",10,"bold")).pack(side='left', padx=4)
-        tk.Button(hdr, text="Clear", command=self._clear_log,
-                  bg=BG3, fg=FG2, font=("Courier",8), relief='flat').pack(side='right', padx=8)
+        Btn(hdr, "Clear", cmd=self._clear_log,
+            font=("Courier",8)).pack(side='right', padx=8)
 
         self._log = tk.Text(parent, bg='#080810', fg=FG, font=("Courier",9),
                             state='disabled', wrap='word', relief='flat',
@@ -841,8 +845,8 @@ class NeuroForgeApp(tk.Tk):
         self._test_var = tk.StringVar(value="hello")
         tk.Entry(test_frm, textvariable=self._test_var, bg=BG3, fg=YEL,
                  insertbackground=FG, relief='flat', font=("Courier",9), width=20).pack(side='left', padx=4)
-        tk.Button(test_frm, text="▶ Test", command=self._run_test,
-                  bg=BG3, fg=GRN, font=("Courier",9), relief='flat', padx=6).pack(side='left', padx=2)
+        Btn(test_frm, "▶ Test", cmd=self._run_test,
+            font=("Courier",9)).pack(side='left', padx=2)
         self._test_result_var = tk.StringVar(value="(forge a creature first)")
         tk.Label(test_frm, textvariable=self._test_result_var,
                  bg=BG2, fg=CYN, font=("Courier",8)).pack(side='left', padx=8)
@@ -862,44 +866,35 @@ class NeuroForgeApp(tk.Tk):
         self._pct_lbl.pack(side='left')
 
         btn_row = tk.Frame(bot, bg=BG2); btn_row.pack(fill='x', padx=10, pady=(4,4))
-        self._forge_btn = tk.Button(btn_row, text="  ⚡ FORGE CREATURE  ",
-                                    command=self._start_forge,
-                                    bg=ACN, fg=BG, font=("Courier",12,"bold"),
-                                    relief='flat', padx=14, pady=6,
-                                    activebackground=BG4, activeforeground=FG)
+        self._forge_btn = Btn(btn_row, "  ⚡ FORGE CREATURE  ",
+                              cmd=self._start_forge,
+                              font=("Courier",12,"bold"), padx=14, pady=6)
         self._forge_btn.pack(side='left', padx=4)
-        self._abort_btn = tk.Button(btn_row, text="  ✕ Abort  ", command=self._abort_forge,
-                                    bg=RED, fg=BG, font=("Courier",10,"bold"),
-                                    relief='flat', padx=10, pady=6,
-                                    activebackground=BG4, activeforeground=FG, state='disabled')
+        self._abort_btn = Btn(btn_row, "  ✕ Abort  ", cmd=self._abort_forge,
+                              font=("Courier",10,"bold"), pady=6, state='disabled')
         self._abort_btn.pack(side='left', padx=4)
         ttk.Separator(btn_row, orient='vertical').pack(side='left', fill='y', padx=10, pady=4)
-        self._save_c_btn = tk.Button(btn_row, text="  💾 Save .creature.npz  ",
-                                     command=lambda: self._save('creature'),
-                                     bg=BG3, fg=GRN, font=("Courier",10),
-                                     relief='flat', padx=10, pady=6, state='disabled')
+        self._save_c_btn = Btn(btn_row, "  💾 Save .creature.npz  ",
+                               cmd=lambda: self._save('creature'),
+                               font=("Courier",10), pady=6, state='disabled')
         self._save_c_btn.pack(side='left', padx=4)
-        self._save_l_btn = tk.Button(btn_row, text="  💾 Save .ltm.npz  ",
-                                     command=lambda: self._save('ltm'),
-                                     bg=BG3, fg=YEL, font=("Courier",10),
-                                     relief='flat', padx=10, pady=6, state='disabled')
+        self._save_l_btn = Btn(btn_row, "  💾 Save .ltm.npz  ",
+                               cmd=lambda: self._save('ltm'),
+                               font=("Courier",10), pady=6, state='disabled')
         self._save_l_btn.pack(side='left', padx=4)
-        self._save_both_btn = tk.Button(btn_row, text="  💾 Save Both  ",
-                                        command=self._save_both,
-                                        bg=GRN, fg=BG, font=("Courier",10,"bold"),
-                                        relief='flat', padx=10, pady=6, state='disabled')
+        self._save_both_btn = Btn(btn_row, "  💾 Save Both  ",
+                                  cmd=self._save_both,
+                                  font=("Courier",10,"bold"), pady=6, state='disabled')
         self._save_both_btn.pack(side='left', padx=4)
 
         self._post_row = tk.Frame(bot, bg=BG2)
-        self._retrain_btn = tk.Button(self._post_row, text="  🔄 Retrain (fresh)  ",
-                                      command=self._retrain, bg=BG3, fg=PRP,
-                                      font=("Courier",10,"bold"), relief='flat',
-                                      padx=10, pady=4, state='disabled')
+        self._retrain_btn = Btn(self._post_row, "  🔄 Retrain (fresh)  ",
+                                cmd=self._retrain,
+                                font=("Courier",10,"bold"), state='disabled')
         self._retrain_btn.pack(side='left', padx=4)
-        self._continue_btn = tk.Button(self._post_row, text="  ➕ Continue Training  ",
-                                       command=self._continue_training, bg=BG3, fg=CYN,
-                                       font=("Courier",10,"bold"), relief='flat',
-                                       padx=10, pady=4, state='disabled')
+        self._continue_btn = Btn(self._post_row, "  ➕ Continue Training  ",
+                                 cmd=self._continue_training,
+                                 font=("Courier",10,"bold"), state='disabled')
         self._continue_btn.pack(side='left', padx=4)
         tk.Label(self._post_row, text="Continue resumes Phase 2+3 on existing weights.",
                  bg=BG2, fg=FG2, font=("Courier",7)).pack(side='left', padx=8)

@@ -92,36 +92,32 @@ def Lbl(parent, text='', **kw):
     kw.setdefault('font', ("Courier", 10)); kw.setdefault('anchor', 'w')
     return tk.Label(parent, text=text, **kw)
 
-def Btn(parent, text, cmd=None, color=BG3, fg=None, **kw):
-    """Auto-contrast button: light text on dark backgrounds, dark text on light ones."""
-    if fg is None:
-        c = color.lstrip('#')
-        if len(c) == 6:
-            r, g, b = int(c[0:2],16), int(c[2:4],16), int(c[4:6],16)
-            lum = (0.299*r + 0.587*g + 0.114*b) / 255
-            fg = '#111122' if lum > 0.45 else FG   # dark text on light buttons, light on dark
-        else:
-            fg = FG
-    # Hover: slightly lighter for dark buttons, slightly darker for light buttons
-    c = color.lstrip('#')
-    if len(c) == 6:
-        r, g, b = int(c[0:2],16), int(c[2:4],16), int(c[4:6],16)
-        lum = (0.299*r + 0.587*g + 0.114*b) / 255
-        if lum > 0.45:
-            # light button → grey hover
-            act_bg, act_fg = '#cccccc', '#111122'
-        else:
-            # dark button → slightly lighter dark hover
-            act_bg, act_fg = BG4, FG
-    else:
-        act_bg, act_fg = BG4, FG
+def Btn(parent, text, cmd=None, color=ACN, fg=BG, **kw):
+    """High-contrast button: colored bg (accent) + very dark text, hover darkens
+    bg to BG3 and shows accent text.  bd=1 fixes the tkinter flat-button bug
+    where the background paints over the text on some platforms."""
     kw.setdefault('font', ("Courier", 10, "bold"))
     kw.setdefault('relief', 'flat')
-    kw.setdefault('padx', 8)
+    kw.setdefault('bd', 1)
+    kw.setdefault('highlightthickness', 0)
+    kw.setdefault('padx', 10)
     kw.setdefault('pady', 4)
     kw.setdefault('cursor', 'hand2')
-    return tk.Button(parent, text=text, command=cmd, bg=color, fg=fg,
-                     activebackground=act_bg, activeforeground=act_fg, **kw)
+    btn = tk.Button(parent, text=text, command=cmd,
+                    bg=color, fg=fg,
+                    activebackground=BG3, activeforeground=color,
+                    **kw)
+
+    def _enter(e):
+        if str(btn['state']) != 'disabled':
+            btn.config(bg=BG3, fg=color)
+    def _leave(e):
+        if str(btn['state']) != 'disabled':
+            btn.config(bg=color, fg=fg)
+
+    btn.bind('<Enter>', _enter)
+    btn.bind('<Leave>', _leave)
+    return btn
 
 def DEntry(parent, **kw):
     kw.setdefault('bg', BG3); kw.setdefault('fg', FG)
@@ -290,13 +286,13 @@ def add_music_bar(root, player: MusicPlayer) -> None:
     mute_btn = tk.Button(bar, text='⏸ mute', command=_mute,
                          bg=BG2, fg=BG4, font=("Courier", 7), relief='flat',
                          activebackground=BG3, activeforeground=FG2,
-                         cursor='hand2', padx=4, pady=0, bd=0)
+                         cursor='hand2', padx=4, pady=0, bd=1, highlightthickness=0)
     mute_btn.pack(side=tk.RIGHT, padx=2)
 
     tk.Button(bar, text='⏭ skip', command=player.skip,
               bg=BG2, fg=BG4, font=("Courier", 7), relief='flat',
               activebackground=BG3, activeforeground=FG2,
-              cursor='hand2', padx=4, pady=0, bd=0).pack(side=tk.RIGHT, padx=2)
+              cursor='hand2', padx=4, pady=0, bd=1, highlightthickness=0).pack(side=tk.RIGHT, padx=2)
 
     # Copyright
     tk.Label(root, text="© 2026 Volvi", bg=BG, fg=BG3,

@@ -236,8 +236,8 @@ class Launcher(tk.Tk):
                         bg=color, fg=BG,
                         font=("Courier", 10, "bold"),
                         relief='flat', cursor='hand2',
-                        activebackground=BG4, activeforeground=FG,
-                        padx=10, pady=6)
+                        activebackground=BG3, activeforeground=color,
+                        padx=10, pady=6, bd=1, highlightthickness=0)
         btn.pack(fill='x')
 
         # Bind hover
@@ -261,11 +261,11 @@ class Launcher(tk.Tk):
                       fg=YEL if self._music.is_muted else BG4)
         mb = tk.Button(bar, text='⏸ mute', command=_mute, bg=BG2, fg=BG4,
                        font=("Courier",7), relief='flat', cursor='hand2',
-                       activebackground=BG3, activeforeground=FG2, padx=4, pady=0, bd=0)
+                       activebackground=BG3, activeforeground=FG2, padx=4, pady=0, bd=1, highlightthickness=0)
         mb.pack(side=tk.RIGHT, padx=2)
         tk.Button(bar, text='⏭ skip', command=self._music.skip, bg=BG2, fg=BG4,
                   font=("Courier",7), relief='flat', cursor='hand2',
-                  activebackground=BG3, activeforeground=FG2, padx=4, pady=0, bd=0).pack(side=tk.RIGHT, padx=2)
+                  activebackground=BG3, activeforeground=FG2, padx=4, pady=0, bd=1, highlightthickness=0).pack(side=tk.RIGHT, padx=2)
 
     def _launch(self, app, stat_var, stat_lbl):
         key = app['key']

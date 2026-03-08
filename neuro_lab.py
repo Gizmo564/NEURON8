@@ -28,6 +28,11 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import threading, datetime, math, random, json, re, csv
 
+# ── Program-accent button: all buttons use PRP (NeuroLab purple) ──────────────
+_Btn_core = Btn
+def Btn(parent, text, cmd=None, color=None, fg=None, **kw):
+    return _Btn_core(parent, text, cmd=cmd, color=PRP, fg=BG, **kw)
+
 
 # ─────────────────────────────────────────────────────────────
 #  Creature slot (holds one loaded creature)

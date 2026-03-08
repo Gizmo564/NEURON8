@@ -31,6 +31,11 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import threading, datetime, math, random, json, queue, re
 
+# ── Program-accent button: all buttons use ACN (NeuroSim blue-purple) ─────────
+_Btn_core = Btn
+def Btn(parent, text, cmd=None, color=None, fg=None, **kw):
+    return _Btn_core(parent, text, cmd=cmd, color=ACN, fg=BG, **kw)
+
 
 # ─────────────────────────────────────────────────────────────
 #  Utility Dialogs
@@ -771,15 +776,13 @@ class App:
             color=BG4, fg='#ffffff', font=("Courier",8)).pack(side=tk.LEFT, padx=6)
 
         fb_row = tk.Frame(inp_frm, bg=BG3); fb_row.pack(fill='x', padx=4, pady=(2,0))
-        self._approve_btn = tk.Button(fb_row, text="✓ Good",
-            command=self._chat_approve, bg='#1e3d1e', fg=GRN,
-            font=("Courier",9,"bold"), relief='flat', padx=6, pady=3,
-            activebackground=BG4, activeforeground=GRN, state=tk.DISABLED)
+        self._approve_btn = Btn(fb_row, "✓ Good",
+            cmd=self._chat_approve,
+            font=("Courier",9,"bold"), pady=3, state=tk.DISABLED)
         self._approve_btn.pack(side=tk.LEFT, padx=(0,4))
-        self._disapprove_btn = tk.Button(fb_row, text="✗ Bad",
-            command=self._chat_disapprove, bg='#3d1e1e', fg=RED,
-            font=("Courier",9,"bold"), relief='flat', padx=6, pady=3,
-            activebackground=BG4, activeforeground=RED, state=tk.DISABLED)
+        self._disapprove_btn = Btn(fb_row, "✗ Bad",
+            cmd=self._chat_disapprove,
+            font=("Courier",9,"bold"), pady=3, state=tk.DISABLED)
         self._disapprove_btn.pack(side=tk.LEFT)
         self._feedback_lbl = tk.Label(inp_frm, text="", bg=BG3, fg=FG2,
                                        font=("Courier",7,"italic"), anchor='w')

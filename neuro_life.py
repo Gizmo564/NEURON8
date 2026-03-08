@@ -24,6 +24,11 @@ from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 import threading, datetime, random, math, json, re
 
+# ── Program-accent button: all buttons use GRN (NeuroLife green) ──────────────
+_Btn_core = Btn
+def Btn(parent, text, cmd=None, color=None, fg=None, **kw):
+    return _Btn_core(parent, text, cmd=cmd, color=GRN, fg=BG, **kw)
+
 # ─────────────────────────────────────────────────────────────
 #  Constants
 # ─────────────────────────────────────────────────────────────
