@@ -93,19 +93,28 @@ def Lbl(parent, text='', **kw):
     return tk.Label(parent, text=text, **kw)
 
 def Btn(parent, text, cmd=None, color=BG3, fg=None, **kw):
-    """High-contrast button — auto-picks fg based on button luminance if not specified."""
+    """Auto-contrast button: light text on dark backgrounds, dark text on light ones."""
     if fg is None:
-        # Parse hex colour and decide light or dark text
         c = color.lstrip('#')
         if len(c) == 6:
             r, g, b = int(c[0:2],16), int(c[2:4],16), int(c[4:6],16)
             lum = (0.299*r + 0.587*g + 0.114*b) / 255
-            fg = BG if lum > 0.35 else '#e8e8f8'
+            fg = '#111122' if lum > 0.45 else FG   # dark text on light buttons, light on dark
         else:
-            fg = '#e8e8f8'
-    # Active state: flip the colours for clear feedback
-    act_bg  = '#e8e8f8' if fg == BG else BG3
-    act_fg  = BG        if fg == BG else '#e8e8f8'
+            fg = FG
+    # Hover: slightly lighter for dark buttons, slightly darker for light buttons
+    c = color.lstrip('#')
+    if len(c) == 6:
+        r, g, b = int(c[0:2],16), int(c[2:4],16), int(c[4:6],16)
+        lum = (0.299*r + 0.587*g + 0.114*b) / 255
+        if lum > 0.45:
+            # light button → grey hover
+            act_bg, act_fg = '#cccccc', '#111122'
+        else:
+            # dark button → slightly lighter dark hover
+            act_bg, act_fg = BG4, FG
+    else:
+        act_bg, act_fg = BG4, FG
     kw.setdefault('font', ("Courier", 10, "bold"))
     kw.setdefault('relief', 'flat')
     kw.setdefault('padx', 8)

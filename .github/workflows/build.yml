@@ -208,6 +208,7 @@ jobs:
             > **macOS:** If Gatekeeper blocks the app, right-click → Open, or run `xattr -cr Neuron8.app`
             >
             > **Windows:** If SmartScreen appears, click "More info" → "Run anyway"
+            >
             > **Linux:** Because this ffplay is dynamically linked (not a static build), it will work on Ubuntu/Debian-based systems. Users on Arch, Fedora, or other distros who find music doesn't play just need to run sudo apt install ffmpeg / sudo pacman -S ffmpeg / sudo dnf install ffmpeg once. Everything else in the app runs fine without it.
           files: |
             artifacts/Neuron8-macOS/Neuron8_macOS.dmg
