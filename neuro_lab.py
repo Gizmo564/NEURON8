@@ -16,6 +16,8 @@ from neuron8_core import (
     EmotionState, InstinctSystem, GeneticsProfile, RelationalState,
     WordBigram, SoulNN, SimpleNN, make_face, _emotion_rgb,
     BreedingDialog, MusicPlayer, add_music_bar,
+    get_autosave_dir, setup_maximize_button, make_autosave_indicator, flash_autosave_indicator,
+    show_startup_warning,
 )
 
 import numpy as np
@@ -109,8 +111,15 @@ class NeuroLabApp(tk.Tk):
         self.slot = CreatureSlot()
         self._train_thread = None
         self._stop_flag    = False
-        self._tag_images   = {}   # tag → list of vecs
+        self._tag_images   = {}
         self._neuron_after = None
+        self._autosave_indicator = None   # set after header built
+        self._last_autosave = None
+
+        # Fixed autosave path
+        _asd = get_autosave_dir()
+        self._autosave_path = os.path.join(_asd, 'neurolab_creature.autosave.npz')
+
         self._build_ui()
 
         # Music + copyright footer
@@ -118,12 +127,83 @@ class NeuroLabApp(tk.Tk):
         add_music_bar(self, self._music)
         self._music.start()
 
+        # Schedule periodic autosave and startup restore
+        self.after(300, self._startup_restore)
+        self.after(120000, self._autosave_tick)   # every 2 min
+
+        # Backup warning — shown once (or every time if preference not set)
+        self.after(150, lambda: show_startup_warning(
+            self, "NeuroLab", PRP,
+            "NeuroLab lets you directly modify a creature's neural weights, genetics,\n"
+            "relational state, and training data. These operations cannot be undone.\n\n"
+            "Before making significant changes, please export your creature using\n"
+            "NeuroSim → Export, or use 'Save Creature…' here to create a backup copy.\n\n"
+            "The autosave keeps the last session state, but is overwritten each session."
+        ))
+
+    # ── Startup autosave restore ──────────────────────────────
+    def _startup_restore(self):
+        if not os.path.exists(self._autosave_path): return
+        try:
+            self.slot.load_from_npz(self._autosave_path)
+            self._status_var.set(f"Restored: {self.slot.name}  (from last session)")
+            self._refresh_info()
+            self._update_genetics_ui()
+            self._draw_blank_map()
+        except Exception:
+            pass
+
+    def _autosave_tick(self):
+        self._do_autosave()
+        self.after(120000, self._autosave_tick)
+
+    def _do_autosave(self):
+        if not self.slot.loaded: return
+        try:
+            flash_autosave_indicator(self._autosave_indicator, 'saving…')
+            nn = self.slot.nn; ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            emo_order  = ['happiness','sadness','anger','fear','curiosity','calm']
+            inst_order = ['hunger','tiredness','boredom','pain']
+            ge = np.array([self.slot.genetics.emo_susceptibility[e] for e in emo_order], dtype=np.float32)
+            gi = np.array([self.slot.genetics.inst_vulnerability[i] for i in inst_order], dtype=np.float32)
+            if self.slot.soul._memory:
+                raw_vecs = [np.array(m[0]).flatten() for m in self.slot.soul._memory]
+                max_len  = max(len(v) for v in raw_vecs)
+                vecs   = np.array([np.pad(v,(0,max_len-len(v))) for v in raw_vecs], dtype=np.float32)
+                labels = np.array([m[1] for m in self.slot.soul._memory])
+            else:
+                vecs = np.zeros((0,6), dtype=np.float32); labels = np.array([])
+            payload = dict(
+                creature_marker=np.array(True), B_W1=nn.W1, B_b1=nn.b1, B_W2=nn.W2, B_b2=nn.b2, B_W_h=nn.W_h,
+                B_input_size=np.array(nn.input_size), B_hidden_size=np.array(nn.hidden_size),
+                B_output_size=np.array(nn.output_size), B_weight_init=np.array(nn.weight_init),
+                B_name=np.array(self.slot.name),
+                S_W1=self.slot.soul.W1, S_b1=self.slot.soul.b1, S_W2=self.slot.soul.W2, S_b2=self.slot.soul.b2,
+                S_experience=np.array(self.slot.soul.experience), S_play_style=np.array(self.slot.soul.play_style),
+                soul_mem_vecs=vecs, soul_mem_labels=labels,
+                relational_att=np.array(self.slot.relational.attachment),
+                relational_res=np.array(self.slot.relational.resentment),
+                word_dict=np.array(self.slot.word_dict) if self.slot.word_dict else np.array([]),
+                word_bigram_json=np.array(self.slot.bigram.to_json()),
+                bigram_matrix=self.slot.bigram_matrix if self.slot.bigram_matrix is not None else np.zeros((0,0)),
+                bigram_vocab=np.array(self.slot.bigram_vocab) if self.slot.bigram_vocab else np.array([]),
+                genetics_emo=ge, genetics_inst=gi,
+                saved_at=np.array(ts), forged_by=np.array("NeuroLab_N8"),
+            )
+            np.savez(self._autosave_path, **payload)
+            self._last_autosave = datetime.datetime.now()
+            self._status_var.set(f"Autosaved: {self.slot.name}  ({self._last_autosave.strftime('%H:%M:%S')})")
+        except Exception:
+            pass
+
     def _build_ui(self):
         hdr = tk.Frame(self, bg=BG2, pady=6); hdr.pack(fill='x')
         tk.Label(hdr, text="  ⚗ NeuroLab", bg=BG2, fg=PRP,
                  font=("Courier",14,"bold")).pack(side=tk.LEFT)
         tk.Label(hdr, text="Deep editing · Training · Analysis · Breeding",
                  bg=BG2, fg=FG2, font=("Courier",9,"italic")).pack(side=tk.LEFT, padx=12)
+        setup_maximize_button(self, hdr, accent=PRP)
+        self._autosave_indicator = make_autosave_indicator(hdr, accent=PRP)
         Btn(hdr, "Load Creature…", cmd=self._load_creature, color=PRP, fg=BG,
             font=("Courier",9,"bold")).pack(side=tk.RIGHT, padx=6)
         Btn(hdr, "Save Creature…", cmd=self._save_creature, color=GRN, fg=BG,
@@ -469,11 +549,15 @@ class NeuroLabApp(tk.Tk):
         ax = self._w_fig.add_subplot(111)
         ax.set_facecolor(BG2)
         vmax = np.abs(W).max() or 1.0
-        im = ax.imshow(W, cmap='RdBu', vmin=-vmax, vmax=vmax, aspect='auto', interpolation='nearest')
-        self._w_fig.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
-        ax.set_title(f"Layer {layer}  shape={W.shape}", color=FG, fontfamily='monospace', fontsize=9)
-        ax.set_xlabel("Input neurons",  color=FG2, fontsize=7)
-        ax.set_ylabel("Output neurons", color=FG2, fontsize=7)
+        # aspect='equal' ensures every weight cell is the same square size,
+        # giving a uniform, non-distorted view regardless of matrix shape.
+        im = ax.imshow(W, cmap='RdBu', vmin=-vmax, vmax=vmax,
+                       aspect='equal', interpolation='nearest')
+        self._w_fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        ax.set_title(f"Layer {layer}  shape={W.shape}  (±{vmax:.4f})",
+                     color=FG, fontfamily='monospace', fontsize=9)
+        ax.set_xlabel("Column (input dim)",  color=FG2, fontsize=7)
+        ax.set_ylabel("Row (output dim)", color=FG2, fontsize=7)
         ax.tick_params(colors=FG2, labelsize=6)
         # Draw selection marker
         if self._w_sel_row is not None and self._w_sel_col is not None:
@@ -482,7 +566,8 @@ class NeuroLabApp(tk.Tk):
                 rect = plt.Rectangle((c-0.5, r-0.5), 1, 1, linewidth=2,
                                      edgecolor='#ffffff', facecolor='none', linestyle='--')
                 ax.add_patch(rect)
-        self._w_fig.patch.set_facecolor(BG); self._w_fig.tight_layout()
+        self._w_fig.patch.set_facecolor(BG)
+        self._w_fig.tight_layout(pad=1.2)
         self._w_canvas.draw_idle()
         self._w_stats.set(f"  {layer}: shape={W.shape}  mean={W.mean():.5f}  std={W.std():.5f}  min={W.min():.4f}  max={W.max():.4f}")
 
@@ -969,6 +1054,7 @@ class NeuroLabApp(tk.Tk):
             self._refresh_info()
             self._update_genetics_ui()
             self._draw_blank_map()
+            self.after(500, self._do_autosave)   # snapshot immediately
         except Exception as e: messagebox.showerror("Error", str(e))
 
     def _update_genetics_ui(self):

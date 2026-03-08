@@ -17,6 +17,7 @@ from neuron8_core import (
     EmotionState, InstinctSystem, GeneticsProfile, RelationalState,
     WordBigram, SoulNN, SimpleNN,
     MusicPlayer, add_music_bar,
+    setup_maximize_button,
 )
 
 import numpy as np
@@ -452,12 +453,18 @@ class NeuroForgeApp(tk.Tk):
                  font=("Courier",15,"bold")).pack(side='left', padx=10)
         tk.Label(hdr, text="Creature Creation & Pre-Training  ·  Neuron 8",
                  bg=BG2, fg=FG2, font=("Courier",9,"italic")).pack(side='left', padx=4)
+        setup_maximize_button(self, hdr, accent=YEL)
 
-        pane = tk.PanedWindow(self, orient='horizontal', sashwidth=5, bg=BG4)
+        pane = tk.PanedWindow(self, orient='horizontal',
+                               sashwidth=8, sashrelief='raised', sashpad=1,
+                               sashcursor='sb_h_double_arrow', bg=YEL)
         pane.pack(fill='both', expand=True, padx=6, pady=(4,0))
 
-        left  = tk.Frame(pane, bg=BG, width=440); pane.add(left,  minsize=400)
-        right = tk.Frame(pane, bg=BG, width=700); pane.add(right, minsize=420)
+        left  = tk.Frame(pane, bg=BG); pane.add(left,  minsize=460)
+        right = tk.Frame(pane, bg=BG); pane.add(right, minsize=420)
+
+        # Guarantee the sash starts at a sensible position after window renders
+        self.after(50, lambda: pane.sash_place(0, 480, 1))
 
         self._build_left(left)
         self._build_right(right)
@@ -481,6 +488,15 @@ class NeuroForgeApp(tk.Tk):
         id_cv.bind('<Enter>', lambda e: id_cv.bind_all('<MouseWheel>',
             lambda ev: id_cv.yview_scroll(int(-1*(ev.delta/120)),'units')))
         id_cv.bind('<Leave>', lambda e: id_cv.unbind_all('<MouseWheel>'))
+        # Linux scroll wheel (Button-4 = up, Button-5 = down)
+        id_cv.bind('<Enter>', lambda e, c=id_cv: (
+            c.bind_all('<MouseWheel>', lambda ev: c.yview_scroll(int(-ev.delta/120),'units')),
+            c.bind_all('<Button-4>',   lambda ev: c.yview_scroll(-1,'units')),
+            c.bind_all('<Button-5>',   lambda ev: c.yview_scroll( 1,'units')),
+        ) and None)
+        id_cv.bind('<Leave>', lambda e, c=id_cv: (
+            c.unbind_all('<MouseWheel>'), c.unbind_all('<Button-4>'), c.unbind_all('<Button-5>')
+        ) and None)
 
         # Architecture tab
         arch_tab = tk.Frame(nb, bg=BG); nb.add(arch_tab, text="  Architecture  ")
@@ -495,9 +511,14 @@ class NeuroForgeApp(tk.Tk):
         qa_win = qa_cv.create_window((0,0), window=qa_tab, anchor='nw')
         qa_tab.bind('<Configure>', lambda e: qa_cv.configure(scrollregion=qa_cv.bbox('all')))
         qa_cv.bind('<Configure>', lambda e: qa_cv.itemconfig(qa_win, width=e.width))
-        qa_cv.bind('<Enter>', lambda e: qa_cv.bind_all('<MouseWheel>',
-            lambda ev: qa_cv.yview_scroll(int(-1*(ev.delta/120)),'units')))
-        qa_cv.bind('<Leave>', lambda e: qa_cv.unbind_all('<MouseWheel>'))
+        qa_cv.bind('<Enter>', lambda e, c=qa_cv: (
+            c.bind_all('<MouseWheel>', lambda ev: c.yview_scroll(int(-ev.delta/120),'units')),
+            c.bind_all('<Button-4>',   lambda ev: c.yview_scroll(-1,'units')),
+            c.bind_all('<Button-5>',   lambda ev: c.yview_scroll( 1,'units')),
+        ) and None)
+        qa_cv.bind('<Leave>', lambda e, c=qa_cv: (
+            c.unbind_all('<MouseWheel>'), c.unbind_all('<Button-4>'), c.unbind_all('<Button-5>')
+        ) and None)
 
         self._build_identity_tab(id_tab)
         self._build_arch_tab(arch_tab)

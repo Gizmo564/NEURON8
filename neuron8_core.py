@@ -7,7 +7,7 @@
 ╚══════════════════════════════════════════════════════════════════╝
 """
 
-import sys, subprocess, importlib.util, os, datetime, math, random, json, re
+import sys, subprocess, importlib.util, os, datetime, math, random, json, re, platform
 
 def _validate_deps():
     REQUIRED = [('numpy','numpy'), ('PIL','Pillow'), ('matplotlib','matplotlib')]
@@ -61,6 +61,150 @@ PRP  = '#cba6f7'
 CYN  = '#89dceb'
 ORG  = '#fab387'
 HISTORY_LIMIT = 5
+
+# ─────────────────────────────────────────────────────────────
+#  Autosave directory (platform-aware)
+# ─────────────────────────────────────────────────────────────
+def get_autosave_dir() -> str:
+    """Return (and create if needed) the per-user autosave directory."""
+    sys_name = platform.system()
+    if sys_name == 'Windows':
+        base = os.environ.get('APPDATA', os.path.expanduser('~'))
+    elif sys_name == 'Darwin':
+        base = os.path.join(os.path.expanduser('~'), 'Library', 'Application Support')
+    else:                          # Linux / BSD / everything else
+        base = os.environ.get('XDG_DATA_HOME', os.path.join(os.path.expanduser('~'), '.local', 'share'))
+    d = os.path.join(base, 'neuron8', 'autosave')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+# ─────────────────────────────────────────────────────────────
+#  Cross-platform window maximise
+# ─────────────────────────────────────────────────────────────
+def maximize_window(root: tk.Tk) -> None:
+    """Maximise *root* on any platform."""
+    sys_name = platform.system()
+    try:
+        if sys_name == 'Windows':
+            root.state('zoomed')
+        elif sys_name == 'Darwin':
+            root.attributes('-fullscreen', False)  # macOS: no reliable zoomed
+            root.state('zoomed')
+        else:  # Linux / X11 / Wayland via XWayland
+            root.attributes('-zoomed', True)
+    except Exception:
+        pass   # fail silently; user can still resize manually
+
+def setup_maximize_button(root: tk.Tk, header_frame: tk.Frame,
+                          accent: str = ACN) -> None:
+    """Add a tiny ⤢ / ⤡ toggle button to *header_frame* for Linux-friendly maximise."""
+    _state = {'zoomed': False}
+
+    def _toggle():
+        sys_name = platform.system()
+        if _state['zoomed']:
+            _state['zoomed'] = False
+            btn.config(text='⤢')
+            try:
+                if sys_name == 'Windows': root.state('normal')
+                elif sys_name == 'Linux': root.attributes('-zoomed', False)
+                else: root.state('normal')
+            except Exception: pass
+        else:
+            _state['zoomed'] = True
+            btn.config(text='⤡')
+            try:
+                if sys_name == 'Windows': root.state('zoomed')
+                elif sys_name == 'Linux': root.attributes('-zoomed', True)
+                else: root.state('zoomed')
+            except Exception: pass
+
+    btn = tk.Button(header_frame, text='⤢', command=_toggle,
+                    bg=BG2, fg=FG2, font=("Courier", 10), relief='flat',
+                    cursor='hand2', padx=6, pady=0, bd=0, highlightthickness=0,
+                    activebackground=BG3, activeforeground=accent)
+    btn.pack(side=tk.RIGHT, padx=(0, 4))
+    btn.bind('<Enter>', lambda e: btn.config(fg=accent))
+    btn.bind('<Leave>', lambda e: btn.config(fg=FG2))
+
+# ─────────────────────────────────────────────────────────────
+#  Autosave indicator (shared helper)
+# ─────────────────────────────────────────────────────────────
+def make_autosave_indicator(parent: tk.Frame, accent: str = ACN) -> tk.Label:
+    """Return a small label for the header bar.  Call flash_autosave_indicator()
+    on it whenever a background save completes."""
+    lbl = tk.Label(parent, text='○ autosave', bg=BG2, fg=BG4,
+                   font=("Courier", 7), padx=6)
+    lbl.pack(side=tk.RIGHT, padx=2)
+    lbl._accent = accent   # stash for flash
+    return lbl
+
+def flash_autosave_indicator(lbl: tk.Label, msg: str = 'saving…') -> None:
+    """Briefly highlight *lbl* then dim it back."""
+    if lbl is None: return
+    try:
+        lbl.config(text=f'● {msg}', fg=lbl._accent)
+        lbl.after(1800, lambda: lbl.config(text='○ autosave', fg=BG4))
+    except Exception: pass
+
+# ─────────────────────────────────────────────────────────────
+#  Startup backup warning dialog
+# ─────────────────────────────────────────────────────────────
+def show_startup_warning(root: tk.Tk, app_name: str, accent: str, message: str) -> None:
+    """Modal warning shown once per app (or each launch if user doesn't tick 'don't show again').
+    Preference is stored as a flag file in the autosave directory."""
+    pref_file = os.path.join(get_autosave_dir(), f'{app_name.lower()}_warned.flag')
+    if os.path.exists(pref_file):
+        return
+
+    dlg = tk.Toplevel(root)
+    dlg.title(f"⚠  {app_name} — Important Notice")
+    dlg.configure(bg=BG2)
+    dlg.resizable(False, False)
+    dlg.grab_set()
+    dlg.transient(root)
+
+    # Warning icon + title
+    tk.Label(dlg, text="⚠", bg=BG2, fg=YEL,
+             font=("Courier", 28), pady=(8)).pack()
+    tk.Label(dlg, text=f"{app_name}", bg=BG2, fg=accent,
+             font=("Courier", 13, "bold")).pack()
+    tk.Label(dlg, text="Backup Reminder", bg=BG2, fg=FG2,
+             font=("Courier", 9, "italic"), pady=2).pack()
+
+    tk.Frame(dlg, bg=BG4, height=1).pack(fill='x', padx=20, pady=8)
+
+    tk.Label(dlg, text=message, bg=BG2, fg=FG,
+             font=("Courier", 9), wraplength=420, justify='left',
+             padx=24, pady=4).pack(fill='x')
+
+    tk.Frame(dlg, bg=BG4, height=1).pack(fill='x', padx=20, pady=8)
+
+    dont_var = tk.BooleanVar(value=False)
+    tk.Checkbutton(dlg, text="Don't show this warning again",
+                   variable=dont_var, bg=BG2, fg=FG2,
+                   selectcolor=BG3, font=("Courier", 8),
+                   activebackground=BG2).pack(pady=(0, 6))
+
+    def _proceed():
+        if dont_var.get():
+            try:
+                with open(pref_file, 'w') as f: f.write('1')
+            except Exception: pass
+        dlg.destroy()
+
+    Btn(dlg, "  I understand — Open " + app_name + "  ",
+        cmd=_proceed, color=accent, fg=BG,
+        font=("Courier", 10, "bold"), pady=8).pack(pady=(0, 16))
+
+    # Centre on parent
+    dlg.update_idletasks()
+    pw, ph = root.winfo_width(), root.winfo_height()
+    px, py = root.winfo_x(), root.winfo_y()
+    dw, dh = dlg.winfo_width(), dlg.winfo_height()
+    dlg.geometry(f"+{px + (pw - dw)//2}+{py + (ph - dh)//2}")
+
+    root.wait_window(dlg)
 
 # ─────────────────────────────────────────────────────────────
 #  Dark Style
@@ -331,6 +475,28 @@ class ScrollableFrame(tk.Frame):
         wid = c.create_window((0, 0), window=self.inner, anchor='nw')
         self.inner.bind('<Configure>', lambda e: c.configure(scrollregion=c.bbox('all')))
         c.bind('<Configure>', lambda e: c.itemconfig(wid, width=e.width))
+
+        # ── Cross-platform scroll-wheel support ──────────────────────────
+        def _scroll(event):
+            if   event.num == 4: c.yview_scroll(-1, 'units')   # Linux wheel up
+            elif event.num == 5: c.yview_scroll( 1, 'units')   # Linux wheel down
+            elif event.delta:    c.yview_scroll(int(-event.delta / 120), 'units')
+
+        def _grab(e=None):
+            # Claim the global wheel binding so any widget hovered inside scrolls this panel
+            c.bind_all('<MouseWheel>', _scroll)
+            c.bind_all('<Button-4>',   _scroll)
+            c.bind_all('<Button-5>',   _scroll)
+
+        def _release(e=None):
+            c.unbind_all('<MouseWheel>')
+            c.unbind_all('<Button-4>')
+            c.unbind_all('<Button-5>')
+
+        # Activate on hover; the *inner* frame bind keeps it active while over child widgets
+        c.bind('<Enter>',           _grab)
+        c.bind('<Leave>',           _release)
+        self.inner.bind('<Enter>',  _grab)
 
 class Collapsible(tk.Frame):
     def __init__(self, parent, title, start_open=False, **kw):
@@ -1245,7 +1411,7 @@ class InstinctPanel(Collapsible):
 
 class SoulPanel(Collapsible):
     def __init__(self, parent, soul: SoulNN):
-        super().__init__(parent, "Soul (Secondary Neurons)", start_open=True)
+        super().__init__(parent, "Soul (Secondary Neurons)", start_open=False)
         self.soul = soul; B = self.body
         row1 = Frm(B, bg=BG2); row1.pack(fill='x', pady=2)
         Lbl(row1, "XP:", bg=BG2).pack(side=tk.LEFT)

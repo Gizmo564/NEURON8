@@ -16,6 +16,8 @@ from neuron8_core import (
     EmotionState, InstinctSystem, GeneticsProfile, RelationalState,
     WordBigram, SoulNN, SimpleNN, make_face, _emotion_rgb,
     BreedingDialog, MusicPlayer, add_music_bar,
+    get_autosave_dir, setup_maximize_button, make_autosave_indicator, flash_autosave_indicator,
+    show_startup_warning,
 )
 
 import numpy as np
@@ -327,14 +329,85 @@ class NeuroLifeApp(tk.Tk):
         self._sim_after   = None
         self._tick_count  = 0
         self._face_refs   = [None] * MAX_CREATURES
+        self._autosave_indicator = None   # set after header built
+        self._last_autosave = None
+
+        # Fixed autosave paths, one per slot
+        _asd = get_autosave_dir()
+        self._slot_autosave_paths = [
+            os.path.join(_asd, f'neurolife_slot{i}.autosave.npz') for i in range(MAX_CREATURES)
+        ]
+
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(500, self._draw_map)
+        self.after(400, self._startup_restore)
+        self.after(120000, self._autosave_tick)   # autosave every 2 min
 
         # Music + copyright footer
         self._music = MusicPlayer()
         add_music_bar(self, self._music)
         self._music.start()
+
+        # Backup warning — shown once per-install (or every launch until dismissed permanently)
+        self.after(150, lambda: show_startup_warning(
+            self, "NeuroLife", GRN,
+            "NeuroLife runs live autonomous simulations that permanently alter your\n"
+            "creatures' emotional states, instincts, relational bonds, and neural weights.\n\n"
+            "Before starting a long simulation, please export each creature's file using\n"
+            "NeuroSim → Export, so you can restore their previous state if needed.\n\n"
+            "The autosave keeps the most recent session — it is overwritten each time."
+        ))
+
+    # ── Startup autosave restore ──────────────────────────────
+    def _startup_restore(self):
+        restored_any = False
+        for idx, fp in enumerate(self._slot_autosave_paths):
+            if not os.path.exists(fp): continue
+            try:
+                agent = self.agents[idx]; agent.load_from_npz(fp)
+                self._slot_labels[idx].config(text=f"{agent.name}")
+                self._update_quad(idx)
+                restored_any = True
+            except Exception:
+                pass
+        if restored_any:
+            self._draw_map()
+            self._log_append('sys', '  Session restored from autosave.')
+
+    def _autosave_tick(self):
+        self._do_autosave()
+        self.after(120000, self._autosave_tick)
+
+    def _do_autosave(self):
+        any_saved = False
+        for idx, agent in enumerate(self.agents):
+            if not agent.loaded or agent.nn is None: continue
+            try:
+                flash_autosave_indicator(self._autosave_indicator, f'saving slot {idx+1}…')
+                self.update_idletasks()
+                nn = agent.nn; ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                emo_order=['happiness','sadness','anger','fear','curiosity','calm']
+                inst_order=['hunger','tiredness','boredom','pain']
+                ge=np.array([agent.genetics.emo_susceptibility[e] for e in emo_order],dtype=np.float32)
+                gi=np.array([agent.genetics.inst_vulnerability[i] for i in inst_order],dtype=np.float32)
+                vecs=np.array([m[0] for m in agent.soul._memory]) if agent.soul._memory else np.zeros((0,6))
+                labels=np.array([m[1] for m in agent.soul._memory]) if agent.soul._memory else np.array([])
+                np.savez(self._slot_autosave_paths[idx],
+                    creature_marker=np.array(True), B_W1=nn.W1, B_b1=nn.b1, B_W2=nn.W2, B_b2=nn.b2,
+                    B_W_h=nn.W_h, B_input_size=np.array(nn.input_size), B_hidden_size=np.array(nn.hidden_size),
+                    B_output_size=np.array(nn.output_size), B_weight_init=np.array(nn.weight_init),
+                    B_name=np.array(agent.name), S_W1=agent.soul.W1, S_b1=agent.soul.b1,
+                    S_W2=agent.soul.W2, S_b2=agent.soul.b2, S_experience=np.array(agent.soul.experience),
+                    S_play_style=np.array(agent.soul.play_style), soul_mem_vecs=vecs, soul_mem_labels=labels,
+                    relational_att=np.array(agent.relational.attachment), relational_res=np.array(agent.relational.resentment),
+                    word_dict=np.array(agent.word_dict) if agent.word_dict else np.array([]),
+                    genetics_emo=ge, genetics_inst=gi, saved_at=np.array(ts), forged_by=np.array("NeuroLife_N8"))
+                any_saved = True
+            except Exception:
+                pass
+        if any_saved:
+            self._last_autosave = datetime.datetime.now()
 
     def _on_close(self):
         """Cancel all pending after() callbacks before destroying."""
@@ -353,6 +426,8 @@ class NeuroLifeApp(tk.Tk):
                  font=("Courier",14,"bold")).pack(side=tk.LEFT)
         tk.Label(hdr, text="Multi-creature simulation", bg=BG2, fg=FG2,
                  font=("Courier",9,"italic")).pack(side=tk.LEFT, padx=12)
+        setup_maximize_button(self, hdr, accent=GRN)
+        self._autosave_indicator = make_autosave_indicator(hdr, accent=GRN)
         self._tick_lbl = tk.Label(hdr, text="tick: 0", bg=BG2, fg=FG2, font=("Courier",8))
         self._tick_lbl.pack(side=tk.RIGHT, padx=12)
 
@@ -705,6 +780,7 @@ class NeuroLifeApp(tk.Tk):
                 if messagebox.askyesno("LTM found", f"Found matching LTM:\n{os.path.basename(ltm_guess)}\n\nLoad it too?"):
                     self._load_ltm_into(idx, ltm_guess)
             self._update_quad(idx); self._draw_map()
+            self.after(500, self._do_autosave)   # snapshot immediately after load
         except Exception as e: messagebox.showerror("Error", str(e))
 
     def _load_ltm_into(self, idx, fp):

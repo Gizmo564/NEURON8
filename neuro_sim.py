@@ -19,6 +19,7 @@ from neuron8_core import (
     SoulNN, SimpleNN, make_face, _emotion_rgb,
     EmotionPanel, InstinctPanel, SoulPanel, RelationalStatusPanel, HistoryPanel,
     MusicPlayer, add_music_bar,
+    get_autosave_dir, setup_maximize_button, make_autosave_indicator, flash_autosave_indicator,
 )
 
 import numpy as np
@@ -395,10 +396,6 @@ class App:
         self._play_mode     = False
         self._last_interaction  = datetime.datetime.now()
         self._last_play_action  = None
-        self._autosave_path     = None
-        self._creature_autosave_path = None
-        self._last_autosave     = None
-        self._last_creature_autosave = None
         self._rest_since_save   = 0
         self._soc_running       = False
         self._soc_tick_count    = 0
@@ -407,6 +404,14 @@ class App:
         self._img_canvas_size   = 192
         self._whc_words         = None
         self._whc_matrix        = None
+        self._autosave_indicator = None  # set after header is built
+
+        # ── Fixed autosave paths (always active, no manual path needed) ──────
+        _asd = get_autosave_dir()
+        self._autosave_path          = os.path.join(_asd, 'neurosim_ltm.autosave.npz')
+        self._creature_autosave_path = os.path.join(_asd, 'neurosim_creature.autosave.npz')
+        self._last_autosave          = None
+        self._last_creature_autosave = None
 
         # ── Config ───────────────────────────────────────────
         self.cfg_learning_rate = 0.02
@@ -475,8 +480,89 @@ class App:
         self.root.after(60000, self._creature_autosave_tick)
         self.root.after(800,   self._soc_auto_start)
 
-        # Show import gate if no creature loaded
-        self.root.after(200, self._maybe_show_welcome)
+        # Attempt autosave restore; show welcome overlay only if nothing was restored
+        self.root.after(200, self._startup_restore)
+
+    # ── Startup autosave restore ──────────────────────────────
+    def _startup_restore(self):
+        """Silently reload the last autosaved creature + LTM on launch."""
+        restored = False
+        try:
+            if os.path.exists(self._creature_autosave_path):
+                d = np.load(self._creature_autosave_path, allow_pickle=True)
+                self._apply_creature_data(d)
+                restored = True
+        except Exception:
+            pass
+        try:
+            if os.path.exists(self._autosave_path):
+                d = np.load(self._autosave_path, allow_pickle=True)
+                self._apply_ltm_data(d)
+                restored = True
+        except Exception:
+            pass
+        if restored:
+            self._has_creature = True
+            self._upd_badge()
+            self._update_face()
+            try: self._welcome_frame.place_forget()
+            except: pass
+        else:
+            self._maybe_show_welcome()
+
+    def _apply_creature_data(self, d):
+        """Apply data from a creature .npz dict (np.load result) into self."""
+        if 'B_W1' in d:
+            in_s=int(d['B_input_size']); hid_s=int(d['B_hidden_size']); out_s=int(d['B_output_size'])
+            nn = SimpleNN(in_s, hid_s, out_s, float(d.get('B_weight_init', np.array(0.1))))
+            nn.W1=np.array(d['B_W1']); nn.b1=np.array(d['B_b1'])
+            nn.W2=np.array(d['B_W2']); nn.b2=np.array(d['B_b2'])
+            if 'B_W_h' in d: nn.W_h = np.array(d['B_W_h'])
+            nn._init_momentum()
+            self.nn_store['text'] = nn; self.cfg_hidden_size = hid_s
+            if 'B_name' in d: self.brain_name.set(str(d['B_name']))
+        if 'S_W1' in d:
+            self.soul.W1=np.array(d['S_W1']); self.soul.b1=np.array(d['S_b1'])
+            self.soul.W2=np.array(d['S_W2']); self.soul.b2=np.array(d['S_b2'])
+            if 'S_experience' in d: self.soul.experience=float(d['S_experience'])
+            if 'S_name' in d: self.soul_name.set(str(d['S_name']))
+        emo_order  = ['happiness','sadness','anger','fear','curiosity','calm']
+        inst_order = ['hunger','tiredness','boredom','pain']
+        if 'genetics_emo' in d:
+            g=d['genetics_emo'].flatten()
+            for i,nm in enumerate(emo_order[:len(g)]): self.genetics.emo_susceptibility[nm]=float(g[i])
+        if 'genetics_inst' in d:
+            g=d['genetics_inst'].flatten()
+            for i,nm in enumerate(inst_order[:len(g)]): self.genetics.inst_vulnerability[nm]=float(g[i])
+        if 'relational_att' in d: self.relational.attachment=float(d['relational_att'])
+        if 'relational_res' in d: self.relational.resentment=float(d['relational_res'])
+
+    def _apply_ltm_data(self, d):
+        """Apply data from an LTM .npz dict into self."""
+        for itype in ('text', 'image'):
+            if f"{itype}_W1" not in d: continue
+            in_s=int(d[f"{itype}_in"]); hid_s=int(d[f"{itype}_hid"]); out_s=int(d[f"{itype}_out"])
+            nn = SimpleNN(in_s, hid_s, out_s)
+            nn.W1=np.array(d[f"{itype}_W1"]); nn.b1=np.array(d[f"{itype}_b1"])
+            nn.W2=np.array(d[f"{itype}_W2"]); nn.b2=np.array(d[f"{itype}_b2"])
+            nn._init_momentum(); self.nn_store[itype]=nn; self.cfg_hidden_size=hid_s
+        if 'soul_mem_vecs' in d:
+            vecs=d['soul_mem_vecs']; labels=d['soul_mem_labels']
+            self.soul._memory=[(vecs[i],str(labels[i])) for i in range(len(vecs))]
+        if 'word_dict' in d:
+            self.word_dict=list(str(w) for w in d['word_dict']); self._whc_matrix=None
+            try: self._dict_lbl.config(text=f"{len(self.word_dict)} words")
+            except: pass
+        if 'word_bigram_json' in d: self.word_bigram=WordBigram.from_json(str(d['word_bigram_json']))
+        if 'relational_att' in d:
+            self.relational.attachment=float(d['relational_att'])
+            self.relational.resentment=float(d['relational_res'])
+        if 'genetics_emo' in d:
+            g=d['genetics_emo'].flatten()
+            for i,nm in enumerate(GeneticsProfile.EMO_NAMES[:len(g)]): self.genetics.emo_susceptibility[nm]=float(g[i])
+        if 'genetics_inst' in d:
+            g=d['genetics_inst'].flatten()
+            for i,nm in enumerate(GeneticsProfile.INST_NAMES[:len(g)]): self.genetics.inst_vulnerability[nm]=float(g[i])
 
     # ── Welcome gate ─────────────────────────────────────────
     def _maybe_show_welcome(self):
@@ -512,19 +598,28 @@ class App:
         self._badge_lbl = tk.Label(hdr, textvariable=self._badge_var,
                                     bg=BG3, fg=FG2, font=("Courier",8), padx=8, pady=3)
         self._badge_lbl.pack(side=tk.LEFT, padx=10)
+        setup_maximize_button(self.root, hdr, accent=ACN)
+        self._autosave_indicator = make_autosave_indicator(hdr, accent=ACN)
         Btn(hdr, "Export", cmd=self.open_save_dialog, color=BG3, fg='#ffffff',
             font=("Courier",9)).pack(side=tk.RIGHT, padx=6)
         Btn(hdr, "Import", cmd=self.open_load_dialog, color=ACN, fg=BG,
             font=("Courier",9,"bold")).pack(side=tk.RIGHT, padx=4)
 
-        # Split pane
-        pane = tk.PanedWindow(self.root, orient='horizontal', sashwidth=6,
-                               bg=BG4, sashrelief='flat')
+        # Split pane — sashcursor makes it obvious the divider is draggable
+        pane = tk.PanedWindow(self.root, orient='horizontal',
+                               sashwidth=8, sashrelief='raised', sashpad=1,
+                               sashcursor='sb_h_double_arrow', bg=ACN)
         pane.pack(fill='both', expand=True, side=tk.TOP)
 
-        left_outer  = tk.Frame(pane, bg=BG, width=480)
-        right_outer = tk.Frame(pane, bg=BG, width=560)
-        pane.add(left_outer,  minsize=360); pane.add(right_outer, minsize=400)
+        left_outer  = tk.Frame(pane, bg=BG)
+        right_outer = tk.Frame(pane, bg=BG)
+        # minsize=490: wide enough to always show all three tool buttons + dict label
+        pane.add(left_outer,  minsize=490); pane.add(right_outer, minsize=400)
+        self._pane = pane
+
+        # Set initial sash position after the window is realised — Frame width hints are
+        # not reliably honoured by PanedWindow as sash positions across all platforms.
+        self.root.after(50, lambda: pane.sash_place(0, 510, 1))
 
         self._left_sf  = ScrollableFrame(left_outer)
         self._left_sf.pack(fill='both', expand=True)
@@ -627,12 +722,15 @@ class App:
     def _build_right(self, parent):
         p = parent
 
-        # Face
-        face_frm = tk.Frame(p, bg=BG2, padx=8, pady=8)
-        face_frm.grid(row=0, column=0, columnspan=2, sticky='ew', padx=8, pady=(8,4))
-        self.face_lbl = tk.Label(face_frm, bg=BG2, text="◉",
-                                  font=("Courier", 72), fg=BG4, width=100, height=100)
-        self.face_lbl.pack(side=tk.LEFT)
+        # Face — fixed 110×110 box keeps the placeholder glyph and face image from distorting layout
+        face_frm = tk.Frame(p, bg=BG2, padx=8, pady=4)
+        face_frm.grid(row=0, column=0, columnspan=2, sticky='ew', padx=8, pady=(6,2))
+        face_box = tk.Frame(face_frm, bg=BG2, width=110, height=110)
+        face_box.pack_propagate(False)
+        face_box.pack(side=tk.LEFT)
+        self.face_lbl = tk.Label(face_box, bg=BG2, text="◉",
+                                  font=("Courier", 28), fg=BG4)
+        self.face_lbl.pack(fill='both', expand=True)
         nf = Frm(face_frm, bg=BG2); nf.pack(side=tk.LEFT, fill='both', expand=True, padx=12)
         Lbl(nf, "Brain name:", bg=BG2, font=("Courier",8)).pack(fill='x')
         DEntry(nf, textvariable=self.brain_name, font=("Courier",10,"bold")).pack(fill='x')
@@ -686,7 +784,7 @@ class App:
 
     # ── V3 / SoC panel ───────────────────────────────────────
     def _build_v3_panel(self, parent, row=7):
-        outer = Collapsible(parent, "  V3 — RNN · Hebbian · Visual Cortex · SoC", start_open=True)
+        outer = Collapsible(parent, "  V3 — RNN · Hebbian · Visual Cortex · SoC", start_open=False)
         outer.grid(row=row, column=0, columnspan=2, sticky='ew', padx=8, pady=(4,8))
         B = outer.body
 
@@ -1498,7 +1596,7 @@ class App:
 
     def _autosave_tick(self):
         try:
-            if self._autosave_enabled.get() and self._autosave_path and not self._running:
+            if self._autosave_enabled.get() and not self._running:
                 interval_s = int(self._autosave_interval.get()) * 60
                 if self._last_autosave is None or (datetime.datetime.now() - self._last_autosave).total_seconds() >= interval_s:
                     self._silent_save_ltm("timed")
@@ -1507,7 +1605,7 @@ class App:
 
     def _creature_autosave_tick(self):
         try:
-            if self._autosave_enabled.get() and self._creature_autosave_path and not self._running:
+            if self._autosave_enabled.get() and not self._running:
                 interval_s = int(self._autosave_interval.get()) * 60
                 if self._last_creature_autosave is None or (datetime.datetime.now() - self._last_creature_autosave).total_seconds() >= interval_s:
                     self._silent_save_creature("timed")
@@ -1517,6 +1615,7 @@ class App:
     def _silent_save_ltm(self, reason="auto"):
         if not self._autosave_path or self._running: return
         try:
+            flash_autosave_indicator(self._autosave_indicator, 'saving LTM…')
             consolidated = {}
             for itype, nn in self.nn_store.items():
                 if nn is None: continue
@@ -1550,6 +1649,7 @@ class App:
         try:
             nn = self.nn_store.get(self._last_itype)
             if nn is None: return
+            flash_autosave_indicator(self._autosave_indicator, 'saving…')
             emo_order  = ['happiness','sadness','anger','fear','curiosity','calm']
             inst_order = ['hunger','tiredness','boredom','pain']
             ge = np.array([self.genetics.emo_susceptibility[e] for e in emo_order], dtype=np.float32)
