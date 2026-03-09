@@ -61,9 +61,8 @@ jobs:
 
       - name: Create zip for auto-updater
         # Zip the CONTENTS of Neuron8.app (not the .app folder itself).
-        # The updater extracts this into a temp dir and rsyncs Contents/ etc.
-        # directly into the installed .app bundle, so no wrapper folder is needed.
-        # The filename must contain 'macos' for the updater's keyword match.
+        # The updater rsyncs Contents/ etc. directly into the installed .app.
+        # Filename must contain 'macos' for the updater's keyword match.
         run: |
           cd dist/Neuron8.app
           zip -r ../../Neuron8-macos.zip .
@@ -120,13 +119,12 @@ jobs:
         run: python -m PyInstaller neuron8.spec --noconfirm
 
       - name: Create zip for auto-updater
-        # Zip the Neuron8/ folder so it has a single top-level directory.
-        # The updater's extract_zip() unwraps it, giving new_dir = .../Neuron8/.
-        # rsync then copies into the installed Neuron8/ dir in place.
-        # The filename must contain 'linux' for the updater's keyword match.
+        # Onefile output is a single binary at dist/Neuron8.
+        # Zip just that file — the updater copies it into the install dir.
+        # Filename must contain 'linux' for the updater's keyword match.
         run: |
           cd dist
-          zip -r ../Neuron8-linux.zip Neuron8/
+          zip ../Neuron8-linux.zip Neuron8
           cd -
           echo "Zip size: $(du -sh Neuron8-linux.zip)"
 
@@ -180,14 +178,13 @@ jobs:
         run: python -m PyInstaller neuron8.spec --noconfirm
 
       - name: Create zip for auto-updater
-        # Zip the Neuron8 folder so it has a single top-level directory.
-        # The updater's extract_zip() unwraps it, giving new_dir = ...\Neuron8\.
-        # robocopy then copies into the installed Neuron8\ dir in place.
-        # The filename must contain 'windows' for the updater's keyword match.
+        # Onefile output is a single binary at dist\Neuron8.exe.
+        # Zip just that file — the updater copies it into the install dir.
+        # Filename must contain 'windows' for the updater's keyword match.
         shell: pwsh
         run: |
-          Compress-Archive -Path "dist\Neuron8" -DestinationPath "Neuron8-windows.zip" -Force
-          Write-Host "Zip size: $((Get-Item Neuron8-windows.zip).length / 1MB) MB"
+          Compress-Archive -Path "dist\Neuron8.exe" -DestinationPath "Neuron8-windows.zip" -Force
+          Write-Host "Zip size: $([math]::Round((Get-Item Neuron8-windows.zip).length / 1MB, 1)) MB"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -221,8 +218,8 @@ jobs:
             ### Fresh install — download for your platform:
             | Platform | File | Instructions |
             |----------|------|--------------|
-            | 🍎 macOS | `Neuron8-macos.zip` | Unzip, move `Neuron8.app` to Applications |
-            | 🐧 Linux | `Neuron8-linux.zip` | Unzip and run `./Neuron8/Neuron8` |
+            | 🍎 macOS | `Neuron8-macos.zip` | Unzip, drag `Neuron8.app` to Applications |
+            | 🐧 Linux | `Neuron8-linux.zip` | Unzip, then `chmod +x Neuron8 && ./Neuron8` |
             | 🪟 Windows | `Neuron8-windows.zip` | Unzip and double-click `Neuron8.exe` |
 
             > **macOS:** If Gatekeeper blocks the app, right-click → Open, or run `xattr -cr Neuron8.app`
@@ -230,6 +227,8 @@ jobs:
             > **Windows:** If SmartScreen appears, click "More info" → "Run anyway"
             >
             > **Linux:** The bundled ffplay is dynamically linked. If music doesn't play, install ffmpeg via your package manager (`sudo apt install ffmpeg`, `sudo pacman -S ffmpeg`, etc.). Everything else runs without it.
+            >
+            > **First launch:** The app takes a few extra seconds to start as it self-extracts to a temp directory. Subsequent launches are faster once the OS caches the extraction.
           files: |
             artifacts/Neuron8-macOS/Neuron8-macos.zip
             artifacts/Neuron8-Linux/Neuron8-linux.zip

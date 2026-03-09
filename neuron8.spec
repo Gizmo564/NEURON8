@@ -1,13 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
 neuron8.spec  —  PyInstaller spec for Neuron 8
-Bundles all five Python modules, the music folder, and the platform
-ffplay binary into a single distributable directory (onedir mode).
+Bundles all modules, music folder, and the platform ffplay binary into a
+single executable file (onefile mode).
 
 Build on each platform:
     pyinstaller neuron8.spec
 
-Output lands in  dist/Neuron8/
+Output:
+    Windows / Linux  →  dist/Neuron8   (or Neuron8.exe)
+    macOS            →  dist/Neuron8.app
 """
 
 import sys
@@ -23,7 +25,7 @@ HERE = os.path.dirname(os.path.abspath(SPEC))
 #   Windows : ffplay_bin/windows/ffplay.exe
 #   macOS   : ffplay_bin/macos/ffplay
 #   Linux   : ffplay_bin/linux/ffplay
-_plat = 'windows' if sys.platform == 'win32' else ('macos' if sys.platform == 'darwin' else 'linux')
+_plat       = 'windows' if sys.platform == 'win32' else ('macos' if sys.platform == 'darwin' else 'linux')
 _ffplay_src = os.path.join(HERE, 'ffplay_bin', _plat, 'ffplay' + ('.exe' if sys.platform == 'win32' else ''))
 _ffplay_dst = 'ffplay.exe' if sys.platform == 'win32' else 'ffplay'
 
@@ -34,12 +36,12 @@ if os.path.exists(_ffplay_src):
 else:
     print(f"\n⚠  WARNING: ffplay binary not found at {_ffplay_src}")
     print("   Music will not play in the packaged app.")
-    print("   See PACKAGING.md → 'Bundling ffplay' for instructions.\n")
+    print("   Place the correct static ffplay build in ffplay_bin/{platform}/\n")
 
 _datas = [
-    # Music folder
+    # Music folder — extracted to sys._MEIPASS/music/ at runtime
     (os.path.join(HERE, 'music'), 'music'),
-    # Version file (read at runtime by updater.py)
+    # Version file — read by updater.py via sys._MEIPASS
     (os.path.join(HERE, 'version.txt'), '.'),
 ]
 
@@ -82,17 +84,30 @@ elif sys.platform == 'darwin':
 else:
     _icon = os.path.join(HERE, 'assets', 'neuron8.png')
 
-# ── Executable ───────────────────────────────────────────────────────────────
+# ── Version string for macOS Info.plist ──────────────────────────────────────
+try:
+    with open(os.path.join(HERE, 'version.txt')) as _vf:
+        _version = _vf.read().strip()
+except Exception:
+    _version = '1.0.0'
+
+# ── Onefile EXE ──────────────────────────────────────────────────────────────
+# In onefile mode all binaries, zipfiles, and datas are passed directly into
+# EXE (no separate COLLECT step). PyInstaller compresses everything into the
+# executable itself; at launch it self-extracts to a temp dir (sys._MEIPASS).
 exe = EXE(
     pyz,
     a.scripts,
-    [],
-    exclude_binaries=True,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    exclude_binaries=False,
     name='Neuron8',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
+    upx_exclude=[],
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -102,28 +117,19 @@ exe = EXE(
     icon=_icon,
 )
 
-# ── One-dir bundle ───────────────────────────────────────────────────────────
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='Neuron8',
-)
-
 # ── macOS .app bundle (only active on macOS) ─────────────────────────────────
+# With onefile, BUNDLE wraps the single exe into a standard .app structure.
+# The result is dist/Neuron8.app — drag-and-drop ready for Applications/.
 if sys.platform == 'darwin':
     app = BUNDLE(
-        coll,
+        exe,
         name='Neuron8.app',
         icon=_icon,
         bundle_identifier='com.volvi.neuron8',
         info_plist={
             'NSHighResolutionCapable': True,
-            'CFBundleShortVersionString': '1.0.0',
+            'CFBundleShortVersionString': _version,
+            'CFBundleVersion': _version,
             'CFBundleName': 'Neuron 8',
             'CFBundleDisplayName': 'Neuron 8',
         },
