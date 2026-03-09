@@ -7,7 +7,13 @@
 """
 import sys, os, subprocess, threading, glob, time, random, re
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
+
+# ── Optional updater (gracefully absent if file is missing) ──
+try:
+    import updater as _updater
+except ImportError:
+    _updater = None            # type: ignore
 
 # ── Colour palette ──────────────────────────────────────────
 BG  = '#0f0f1a'; BG2 = '#1a1a2e'; BG3 = '#252545'; BG4 = '#2e2e50'
@@ -150,6 +156,9 @@ class Launcher(tk.Tk):
         self.configure(bg=BG)
         self.resizable(False, False)
         self._running: dict = {}   # key → subprocess.Popen
+        self._latest_release = None   # populated by background update check
+        self._update_btn     = None   # set in _build(); updated by bg check
+
         self._apply_style()
         self._build()
 
@@ -158,6 +167,10 @@ class Launcher(tk.Tk):
         self._add_footer_bar()
         self._music.start()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        # Silent background update check — runs 3 s after launch so startup feels instant
+        if _updater is not None:
+            self.after(3000, self._bg_check_updates)
 
     def _on_close(self):
         self._music.stop()
@@ -177,6 +190,12 @@ class Launcher(tk.Tk):
                  bg=BG2, fg=ACN, font=("Courier", 26, "bold")).pack()
         tk.Label(hdr, text="Digital Creature Simulation Suite",
                  bg=BG2, fg=FG2, font=("Courier", 10, "italic")).pack(pady=(2, 0))
+
+        # Version tag — shown when updater is available
+        if _updater is not None:
+            ver = _updater.current_version()
+            tk.Label(hdr, text=f"v{ver}",
+                     bg=BG2, fg=BG4, font=("Courier", 8)).pack(pady=(4, 0))
 
         sep = tk.Frame(self, bg=BG4, height=2)
         sep.pack(fill='x', padx=20, pady=(10, 0))
@@ -200,6 +219,20 @@ class Launcher(tk.Tk):
                  bg=BG, fg=FG2, font=("Courier", 8, "italic")).pack()
         tk.Label(ftr, text="All four programs share the same Neuron 8 creature format.",
                  bg=BG, fg=BG4, font=("Courier", 7)).pack(pady=(2, 0))
+
+        # Update button — hidden until background check finds a newer release
+        if _updater is not None:
+            self._update_btn = tk.Button(
+                ftr,
+                text="⬆  Check for Updates",
+                command=self._open_update_dialog,
+                bg=BG, fg=BG4,
+                font=("Courier", 8), relief='flat',
+                cursor='hand2', padx=6, pady=2,
+                activebackground=BG3, activeforeground=FG2,
+                bd=0, highlightthickness=0,
+            )
+            self._update_btn.pack(pady=(6, 0))
 
     def _make_tile(self, parent, app, row, col):
         color = app['color']
@@ -329,6 +362,200 @@ class Launcher(tk.Tk):
                 self._status_var.set(f"{app['title']} closed.")
 
         threading.Thread(target=_run, daemon=True).start()
+
+    # ── Auto-update ───────────────────────────────────────────
+    def _bg_check_updates(self):
+        """Fetch latest release info on a daemon thread — never blocks the UI."""
+        def _worker():
+            release = _updater.fetch_latest_release()
+            if release is None:
+                return   # network unavailable — silently do nothing
+            remote = release.get("tag_name", "").lstrip("v")
+            local  = _updater.current_version()
+            if _updater.is_newer(remote, local):
+                self._latest_release = release
+                # Marshal back to the Tk main thread to update the UI
+                self.after(0, lambda: self._show_update_badge(remote))
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _show_update_badge(self, remote_ver: str):
+        """Light up the update button to announce a new version."""
+        if self._update_btn is None:
+            return
+        self._update_btn.config(
+            text=f"⬆  Update available  v{_updater.current_version()} → v{remote_ver}",
+            fg=GRN,
+            font=("Courier", 8, "bold"),
+            activeforeground=GRN,
+        )
+        self._status_var.set(
+            f"Neuron 8 v{remote_ver} is available — click 'Update available' below."
+        )
+
+    def _open_update_dialog(self):
+        """Open the update dialog. If a release is already cached, use it;
+        otherwise do a fresh check first."""
+        if self._latest_release is not None:
+            _UpdateDialog(self, self._latest_release)
+        else:
+            # Manual check — show a brief 'checking…' message
+            self._status_var.set("Checking for updates…")
+            def _worker():
+                release = _updater.fetch_latest_release()
+                def _done():
+                    if release is None:
+                        self._status_var.set("Could not reach GitHub — check your connection.")
+                        return
+                    remote = release.get("tag_name", "").lstrip("v")
+                    local  = _updater.current_version()
+                    if _updater.is_newer(remote, local):
+                        self._latest_release = release
+                        self._show_update_badge(remote)
+                        _UpdateDialog(self, release)
+                    else:
+                        self._status_var.set(
+                            f"You are on the latest version (v{local})."
+                        )
+                self.after(0, _done)
+            threading.Thread(target=_worker, daemon=True).start()
+
+
+# ── Update dialog ─────────────────────────────────────────────────────────────
+class _UpdateDialog(tk.Toplevel):
+    """
+    Modal dialog that shows release notes and drives the download/install.
+    """
+    def __init__(self, parent: tk.Tk, release: dict):
+        super().__init__(parent)
+        self._parent  = parent
+        self._release = release
+        self._remote  = release.get("tag_name", "?").lstrip("v")
+        self._local   = _updater.current_version()
+
+        self.title("Neuron 8 — Update Available")
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+
+        self._build()
+
+        # Centre over parent
+        self.update_idletasks()
+        px = parent.winfo_x(); py = parent.winfo_y()
+        pw = parent.winfo_width(); ph = parent.winfo_height()
+        w  = self.winfo_width();   h  = self.winfo_height()
+        self.geometry(f"+{px + (pw - w) // 2}+{py + (ph - h) // 2}")
+
+    def _build(self):
+        # Header
+        hdr = tk.Frame(self, bg=BG2, padx=20, pady=14); hdr.pack(fill='x')
+        tk.Label(hdr, text="⬆  Update Available",
+                 bg=BG2, fg=GRN, font=("Courier", 14, "bold")).pack(anchor='w')
+        tk.Label(hdr,
+                 text=f"  Installed: v{self._local}    →    Latest: v{self._remote}",
+                 bg=BG2, fg=FG2, font=("Courier", 9)).pack(anchor='w', pady=(4, 0))
+
+        # Release notes
+        nf = tk.Frame(self, bg=BG, padx=16, pady=10); nf.pack(fill='both', expand=True)
+        tk.Label(nf, text="Release notes:", bg=BG, fg=FG2,
+                 font=("Courier", 8, "bold")).pack(anchor='w')
+        notes_box = tk.Text(nf, height=10, width=58, bg=BG3, fg=FG,
+                            font=("Courier", 8), wrap=tk.WORD,
+                            relief='flat', bd=0, padx=8, pady=6,
+                            state=tk.NORMAL)
+        notes_box.insert("1.0", self._release.get("body") or "(no release notes)")
+        notes_box.config(state=tk.DISABLED)
+        notes_box.pack(fill='x', pady=(4, 0))
+
+        # Progress area (hidden until install starts)
+        self._prog_frame = tk.Frame(self, bg=BG, padx=16); self._prog_frame.pack(fill='x')
+        self._prog_var   = tk.IntVar(value=0)
+        self._prog_lbl   = tk.StringVar(value="")
+        self._prog_bar   = ttk.Progressbar(self._prog_frame, variable=self._prog_var,
+                                            maximum=100, length=440)
+        self._prog_status = tk.Label(self._prog_frame, textvariable=self._prog_lbl,
+                                      bg=BG, fg=FG2, font=("Courier", 8))
+
+        # Buttons
+        bf = tk.Frame(self, bg=BG, padx=16, pady=14); bf.pack(fill='x')
+        self._install_btn = tk.Button(
+            bf, text="  ⬇  Install Update  ",
+            command=self._start_install,
+            bg=GRN, fg=BG, font=("Courier", 10, "bold"),
+            relief='flat', cursor='hand2',
+            activebackground=BG3, activeforeground=GRN,
+            padx=10, pady=6, bd=0, highlightthickness=0,
+        )
+        self._install_btn.pack(side=tk.LEFT, padx=(0, 10))
+
+        tk.Button(bf, text="Later", command=self.destroy,
+                  bg=BG3, fg=FG2, font=("Courier", 9),
+                  relief='flat', cursor='hand2',
+                  activebackground=BG4, activeforeground=FG,
+                  padx=8, pady=4, bd=0, highlightthickness=0,
+                  ).pack(side=tk.LEFT)
+
+        # GitHub link
+        link = tk.Label(bf, text="View on GitHub ↗",
+                        bg=BG, fg=BG4, font=("Courier", 8),
+                        cursor='hand2')
+        link.pack(side=tk.RIGHT)
+        link.bind("<Button-1>", lambda _: self._open_github())
+        link.bind("<Enter>",    lambda _: link.config(fg=ACN))
+        link.bind("<Leave>",    lambda _: link.config(fg=BG4))
+
+    def _open_github(self):
+        import webbrowser
+        url = self._release.get("html_url",
+              f"https://github.com/{_updater.GITHUB_OWNER}/{_updater.GITHUB_REPO}/releases/latest")
+        webbrowser.open(url)
+
+    def _show_progress(self):
+        self._prog_bar.pack(fill='x', pady=(8, 2))
+        self._prog_status.pack(anchor='w', pady=(0, 6))
+
+    def _progress_cb(self, fraction: float, text: str):
+        """Called from the download thread — marshals updates to the Tk thread."""
+        pct = max(0, min(100, int(fraction * 100)))
+        self.after(0, lambda: self._prog_var.set(pct))
+        self.after(0, lambda: self._prog_lbl.set(text))
+
+    def _start_install(self):
+        self._install_btn.config(state=tk.DISABLED, text="  Installing…  ")
+        self._show_progress()
+
+        def _worker():
+            ok, msg = _updater.launch_update(self._release, self._progress_cb)
+            self.after(0, lambda: self._on_install_done(ok, msg))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_install_done(self, ok: bool, msg: str):
+        if ok:
+            self._prog_lbl.set("✔ Update ready — Neuron 8 will restart automatically.")
+            self._install_btn.config(
+                state=tk.NORMAL, text="  Quit & Apply  ",
+                command=self._quit_and_apply,
+                bg=GRN,
+            )
+        else:
+            self._prog_lbl.set(f"✖ {msg}")
+            self._install_btn.config(
+                state=tk.NORMAL, text="  Retry  ",
+                command=self._start_install,
+                bg=YEL, fg=BG,
+            )
+
+    def _quit_and_apply(self):
+        """Close all open sub-apps and exit so the helper script can replace the files."""
+        try:
+            for proc in self._parent._running.values():
+                if proc is not None and proc.poll() is None:
+                    proc.terminate()
+        except Exception:
+            pass
+        self._parent.destroy()
 
 
 if __name__ == '__main__':

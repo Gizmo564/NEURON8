@@ -39,6 +39,8 @@ else:
 _datas = [
     # Music folder
     (os.path.join(HERE, 'music'), 'music'),
+    # Version file (read at runtime by updater.py)
+    (os.path.join(HERE, 'version.txt'), '.'),
 ]
 
 # ── Hidden imports (matplotlib / PIL backends not auto-detected) ─────────────
