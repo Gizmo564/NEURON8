@@ -76,7 +76,7 @@ jobs:
         # updater's keyword match. This asset is downloaded silently by the
         # in-app updater; it is NOT the recommended download for new users.
         run: |
-          ditto -c -k --sequesterRsrc --keepParent \
+          ditto -c -k --keepParent \
             dist/Neuron8.app \
             Neuron8-macos.zip
           echo "DMG size: $(du -sh dist/Neuron8-macos.dmg)"

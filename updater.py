@@ -189,22 +189,40 @@ def extract_zip(
 ) -> Optional[str]:
     """
     Extract zip_path into out_dir.
-    If the zip wraps a single top-level folder (common with GitHub releases),
-    return the path to that folder so the installer sees the actual app files.
+    On macOS, uses `ditto -x -k` which correctly restores permissions, symlinks,
+    and extended attributes from a ditto-created zip — Python's zipfile cannot.
+    On other platforms uses Python's zipfile module.
+    If the zip wraps a single top-level folder, returns the path to that folder.
     Returns the content path on success, or None on failure.
     """
     if progress_cb:
         progress_cb(0.72, "Extracting…")
     try:
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(out_dir)
+        if sys.platform == "darwin":
+            # ditto preserves Unix permissions, symlinks, and resource forks
+            # that Python's zipfile silently drops, which would break the .app.
+            import subprocess as _sp
+            result = _sp.run(
+                ["ditto", "-x", "-k", "--sequesterRsrc", zip_path, out_dir],
+                capture_output=True,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.decode())
+        else:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(out_dir)
     except Exception as exc:
         if progress_cb:
             progress_cb(0.0, f"Extraction error: {exc}")
         return None
 
-    # Unwrap a single top-level directory if present
-    entries = [e for e in os.listdir(out_dir) if not e.startswith(".")]
+    # Unwrap a single top-level directory if present.
+    # Ignore __MACOSX (ditto resource-fork sidecar) and dot-files.
+    IGNORE = {"__MACOSX"}
+    entries = [
+        e for e in os.listdir(out_dir)
+        if not e.startswith(".") and e not in IGNORE
+    ]
     if len(entries) == 1:
         candidate = os.path.join(out_dir, entries[0])
         if os.path.isdir(candidate):
@@ -227,24 +245,29 @@ def extract_zip(
 #   - rsync is preferred; cp -Rf is the fallback if rsync is absent
 
 def _write_windows_helper(new_dir: str, dst_dir: str, exe_name: str) -> str:
-    path = os.path.join(tempfile.gettempdir(), "n8_update.bat")
-    restart = os.path.join(dst_dir, exe_name)
+    """
+    Onefile build: new_dir contains Neuron8.exe, dst_dir is the install folder.
+    We kill the running exe to release the Windows file lock, then copy the
+    single binary over the old one with a simple xcopy.
+    """
+    path      = os.path.join(tempfile.gettempdir(), "n8_update.bat")
+    new_exe   = os.path.join(new_dir, exe_name)
+    dst_exe   = os.path.join(dst_dir, exe_name)
     lines = [
         "@echo off",
         "title Neuron 8 Updater",
         "echo Neuron 8 Updater — please wait...",
         "timeout /t 5 /nobreak >nul",
-        # Force-kill any remaining Neuron8 processes to release the exe lock
+        # Kill to release the Windows file lock on the running exe
         f"taskkill /f /im {exe_name} >nul 2>&1",
         "timeout /t 2 /nobreak >nul",
         "echo Installing update...",
-        # /e = include subdirs, /is = include same files, /it = include tweaked files
-        f'robocopy "{new_dir}" "{dst_dir}" /e /is /it /ndl /nfl /nc /ns /njs /njh',
-        # robocopy codes 0-7 all indicate at least partial success
-        "if %errorlevel% leq 7 (",
+        # Simple single-file copy — no robocopy quirks
+        f'copy /y "{new_exe}" "{dst_exe}" >nul',
+        "if %errorlevel% equ 0 (",
         "    echo Update complete. Launching Neuron 8...",
         f'    rmdir /s /q "{new_dir}" >nul 2>&1',
-        f'    start "" "{restart}"',
+        f'    start "" "{dst_exe}"',
         ") else (",
         "    echo Update failed. Error code: %errorlevel%",
         "    echo You can download the latest release manually from GitHub.",
@@ -257,29 +280,48 @@ def _write_windows_helper(new_dir: str, dst_dir: str, exe_name: str) -> str:
 
 
 def _write_posix_helper(new_dir: str, dst_dir: str, exe_name: str) -> str:
+    """
+    Onefile build helper — two cases:
+
+    macOS  : new_dir  = freshly-extracted Neuron8.app
+             dst_dir  = parent dir (e.g. /Applications)
+             Action   : remove the old .app, copy the new one in its place.
+
+    Linux  : new_dir  = temp dir containing the Neuron8 binary
+             dst_dir  = install dir that contains the Neuron8 binary
+             Action   : overwrite just the single binary.
+    """
     path = os.path.join(tempfile.gettempdir(), "n8_update.sh")
 
-    # macOS: dst_dir is the PARENT of the .app (e.g. /Applications).
-    #         Reconstruct the full .app path for 'open'.
-    # Linux: dst_dir is the folder containing the binary — run it directly.
     if sys.platform == "darwin":
-        app_path = os.path.join(dst_dir, "Neuron8.app")
-        restart_cmd = f'open "{app_path}"'
+        app_name = os.path.basename(new_dir)           # should be Neuron8.app
+        # Safety guard: if extraction went wrong and app_name is not a .app
+        # bundle, fall back to the known name rather than rm -rf a wrong path.
+        if not app_name.endswith(".app"):
+            app_name = "Neuron8.app"
+        dst_app  = os.path.join(dst_dir, app_name)     # e.g. /Applications/Neuron8.app
+        # Use ditto for the copy — it preserves permissions and extended
+        # attributes that plain cp drops on macOS.
+        install_cmd = (
+            f'rm -rf "{dst_app}"\n'
+            f'ditto "{new_dir}" "{dst_app}"'
+        )
+        restart_cmd = f'open "{dst_app}"'
     else:
-        _exe = os.path.join(dst_dir, exe_name)
-        restart_cmd = f'chmod +x "{_exe}" 2>/dev/null\n    "{_exe}" &'
+        new_exe     = os.path.join(new_dir, exe_name)
+        dst_exe     = os.path.join(dst_dir, exe_name)
+        install_cmd = (
+            f'cp -f "{new_exe}" "{dst_exe}"\n'
+            f'chmod +x "{dst_exe}"'
+        )
+        restart_cmd = f'"{dst_exe}" &'
 
     script = f"""#!/bin/sh
 echo "Neuron 8 Updater — please wait..."
 sleep 5
 echo "Installing update..."
-if command -v rsync >/dev/null 2>&1; then
-    rsync -a --delete "{new_dir}/" "{dst_dir}/"
-    RC=$?
-else
-    cp -Rf "{new_dir}/." "{dst_dir}/"
-    RC=$?
-fi
+{install_cmd}
+RC=$?
 if [ "$RC" -eq 0 ]; then
     echo "Update complete. Launching Neuron 8..."
     rm -rf "{new_dir}"
@@ -335,21 +377,17 @@ def launch_update(
     dst_dir  = install_dir()
     exe_name = "Neuron8.exe" if sys.platform == "win32" else "Neuron8"
 
-    # macOS: ditto --keepParent zips the .app itself, so extract_zip() unwraps
-    # to new_dir = .../Neuron8.app.  rsync must copy that .app into the *parent*
-    # of the installed .app (e.g. /Applications), not into the .app itself.
+    # macOS: extract_zip() unwraps the ditto zip to new_dir = .../Neuron8.app.
+    # The helper needs the *parent* directory (e.g. /Applications) as dst_dir
+    # so it can remove the old .app and copy the new one into place.
     if sys.platform == "darwin" and dst_dir.endswith(".app"):
-        rsync_src = new_dir          # the freshly-extracted Neuron8.app
-        rsync_dst = os.path.dirname(dst_dir)   # /Applications (or wherever)
-    else:
-        rsync_src = new_dir
-        rsync_dst = dst_dir
+        dst_dir = os.path.dirname(dst_dir)
 
     if progress_cb:
         progress_cb(0.90, "Writing update script…")
 
     helper = (_write_windows_helper if sys.platform == "win32"
-              else _write_posix_helper)(rsync_src, rsync_dst, exe_name)
+              else _write_posix_helper)(new_dir, dst_dir, exe_name)
 
     # 5. Launch helper detached so it outlives this process
     if progress_cb:
