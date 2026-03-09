@@ -55,6 +55,9 @@ _hidden = [
     'numpy',
     'numpy.core._methods',
     'numpy.lib.format',
+    # certifi: provides CA bundle for SSL in frozen macOS apps where the
+    # system certificate store is not accessible to urllib
+    'certifi',
 ]
 
 # ── Analysis ─────────────────────────────────────────────────────────────────

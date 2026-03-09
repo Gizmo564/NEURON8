@@ -7,7 +7,7 @@
 ╚══════════════════════════════════════════════════════════════════╝
 """
 
-import sys, subprocess, importlib.util, os, datetime, math, random, json, re, platform
+import sys, subprocess, importlib.util, os, datetime, math, random, json, re, platform, atexit
 
 def _validate_deps():
     REQUIRED = [('numpy','numpy'), ('PIL','Pillow'), ('matplotlib','matplotlib')]
@@ -333,6 +333,9 @@ class MusicPlayer:
             return
         self._running = True
         threading.Thread(target=self._loop, daemon=True).start()
+        # Guarantee ffplay is killed on any exit path — including macOS Cmd+Q
+        # and SIGTERM — which bypass tkinter's WM_DELETE_WINDOW protocol.
+        atexit.register(self.stop)
 
     def stop(self):
         """Stop playback and kill ffplay immediately. Safe to call multiple times."""

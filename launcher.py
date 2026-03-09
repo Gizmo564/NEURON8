@@ -5,7 +5,7 @@
 ║  Central hub for NeuroSim · NeuroForge · NeuroLab · NeuroLife    ║
 ╚══════════════════════════════════════════════════════════════════╝
 """
-import sys, os, subprocess, threading, glob, time, random, re
+import sys, os, subprocess, threading, glob, time, random, re, atexit
 import tkinter as tk
 from tkinter import ttk, messagebox
 
@@ -53,6 +53,7 @@ class _MusicPlayer:
         if not self._tracks: return
         self._running = True
         threading.Thread(target=self._loop, daemon=True).start()
+        atexit.register(self.stop)
 
     def stop(self):
         self._running = False

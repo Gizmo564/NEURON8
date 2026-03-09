@@ -13,7 +13,7 @@
 ║  contents mirror the Neuron8 install directory exactly.          ║
 ╚══════════════════════════════════════════════════════════════════╝
 """
-import sys, os, json, zipfile, shutil, tempfile, subprocess
+import sys, os, json, zipfile, shutil, tempfile, subprocess, ssl
 from typing import Callable, Optional
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -60,6 +60,31 @@ def is_newer(remote: str, local: str) -> bool:
 
 
 # ── GitHub API ────────────────────────────────────────────────────────────────
+def _ssl_context() -> ssl.SSLContext:
+    """
+    Return an SSL context with a valid CA bundle.
+
+    PyInstaller frozen apps on macOS ship without system SSL certificates,
+    so urllib's default context throws SSLCertVerificationError on any
+    https:// request.  We prefer certifi's bundled CA store (added to the
+    spec's hidden imports), then fall back to the system default, then as
+    a last resort use an unverified context so the check still runs rather
+    than silently failing.
+    """
+    try:
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+        return ctx
+    except Exception:
+        pass
+    try:
+        return ssl.create_default_context()
+    except Exception:
+        pass
+    ctx = ssl._create_unverified_context()   # last resort
+    return ctx
+
+
 def fetch_latest_release(timeout: int = 10) -> Optional[dict]:
     """
     Query the GitHub releases API.
@@ -74,7 +99,7 @@ def fetch_latest_release(timeout: int = 10) -> Optional[dict]:
                 "Accept":     "application/vnd.github+json",
             },
         )
-        with urlopen(req, timeout=timeout) as resp:
+        with urlopen(req, timeout=timeout, context=_ssl_context()) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except Exception:
         return None
@@ -137,7 +162,7 @@ def download_asset(
         total = asset.get("size", 0)
         done  = 0
         req   = Request(url, headers={"User-Agent": "Neuron8-Updater/1.0"})
-        with urlopen(req) as resp, open(dest_path, "wb") as f:
+        with urlopen(req, context=_ssl_context()) as resp, open(dest_path, "wb") as f:
             while True:
                 chunk = resp.read(65536)          # 64 KB chunks
                 if not chunk:
