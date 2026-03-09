@@ -234,10 +234,12 @@ def _write_windows_helper(new_dir: str, dst_dir: str, exe_name: str) -> str:
 def _write_posix_helper(new_dir: str, dst_dir: str, exe_name: str) -> str:
     path = os.path.join(tempfile.gettempdir(), "n8_update.sh")
 
-    # macOS: dst_dir IS the .app bundle — use 'open' to relaunch correctly.
-    # Linux: dst_dir is the Neuron8/ folder — run the binary directly.
-    if sys.platform == "darwin" and dst_dir.endswith(".app"):
-        restart_cmd = f'open "{dst_dir}"'
+    # macOS: dst_dir is the PARENT of the .app (e.g. /Applications).
+    #         Reconstruct the full .app path for 'open'.
+    # Linux: dst_dir is the folder containing the binary — run it directly.
+    if sys.platform == "darwin":
+        app_path = os.path.join(dst_dir, "Neuron8.app")
+        restart_cmd = f'open "{app_path}"'
     else:
         _exe = os.path.join(dst_dir, exe_name)
         restart_cmd = f'chmod +x "{_exe}" 2>/dev/null\n    "{_exe}" &'
@@ -307,11 +309,22 @@ def launch_update(
     # 4. Write platform helper
     dst_dir  = install_dir()
     exe_name = "Neuron8.exe" if sys.platform == "win32" else "Neuron8"
+
+    # macOS: ditto --keepParent zips the .app itself, so extract_zip() unwraps
+    # to new_dir = .../Neuron8.app.  rsync must copy that .app into the *parent*
+    # of the installed .app (e.g. /Applications), not into the .app itself.
+    if sys.platform == "darwin" and dst_dir.endswith(".app"):
+        rsync_src = new_dir          # the freshly-extracted Neuron8.app
+        rsync_dst = os.path.dirname(dst_dir)   # /Applications (or wherever)
+    else:
+        rsync_src = new_dir
+        rsync_dst = dst_dir
+
     if progress_cb:
         progress_cb(0.90, "Writing update script…")
 
     helper = (_write_windows_helper if sys.platform == "win32"
-              else _write_posix_helper)(new_dir, dst_dir, exe_name)
+              else _write_posix_helper)(rsync_src, rsync_dst, exe_name)
 
     # 5. Launch helper detached so it outlives this process
     if progress_cb:

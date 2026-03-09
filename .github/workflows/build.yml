@@ -59,21 +59,36 @@ jobs:
       - name: Build with PyInstaller
         run: python -m PyInstaller neuron8.spec --noconfirm
 
-      - name: Create zip for auto-updater
-        # Zip the CONTENTS of Neuron8.app (not the .app folder itself).
-        # The updater rsyncs Contents/ etc. directly into the installed .app.
-        # Filename must contain 'macos' for the updater's keyword match.
+      - name: Create DMG for fresh installs
+        # DMG preserves all permissions, symlinks, and resource forks perfectly.
+        # This is what new users download from the GitHub release page.
         run: |
-          cd dist/Neuron8.app
-          zip -r ../../Neuron8-macos.zip .
-          cd -
+          hdiutil create \
+            -volname "Neuron 8" \
+            -srcfolder dist/Neuron8.app \
+            -ov -format UDZO \
+            dist/Neuron8-macos.dmg
+
+      - name: Create zip for auto-updater
+        # ditto is Apple's own archiver — unlike 'zip', it preserves Unix
+        # permissions, symlinks, and resource forks so the .app isn't broken
+        # after extraction. The filename must contain 'macos' for the
+        # updater's keyword match. This asset is downloaded silently by the
+        # in-app updater; it is NOT the recommended download for new users.
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            dist/Neuron8.app \
+            Neuron8-macos.zip
+          echo "DMG size: $(du -sh dist/Neuron8-macos.dmg)"
           echo "Zip size: $(du -sh Neuron8-macos.zip)"
 
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Neuron8-macOS
-          path: Neuron8-macos.zip
+          path: |
+            dist/Neuron8-macos.dmg
+            Neuron8-macos.zip
           retention-days: 7
 
   # ── Linux ────────────────────────────────────────────────────────────────────
@@ -218,7 +233,7 @@ jobs:
             ### Fresh install — download for your platform:
             | Platform | File | Instructions |
             |----------|------|--------------|
-            | 🍎 macOS | `Neuron8-macos.zip` | Unzip, drag `Neuron8.app` to Applications |
+            | 🍎 macOS | `Neuron8-macos.dmg` | Mount the DMG, drag `Neuron8.app` to Applications |
             | 🐧 Linux | `Neuron8-linux.zip` | Unzip, then `chmod +x Neuron8 && ./Neuron8` |
             | 🪟 Windows | `Neuron8-windows.zip` | Unzip and double-click `Neuron8.exe` |
 
@@ -230,6 +245,7 @@ jobs:
             >
             > **First launch:** The app takes a few extra seconds to start as it self-extracts to a temp directory. Subsequent launches are faster once the OS caches the extraction.
           files: |
+            artifacts/Neuron8-macOS/Neuron8-macos.dmg
             artifacts/Neuron8-macOS/Neuron8-macos.zip
             artifacts/Neuron8-Linux/Neuron8-linux.zip
             artifacts/Neuron8-Windows/Neuron8-windows.zip
